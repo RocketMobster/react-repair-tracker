@@ -1,40 +1,17 @@
 # Changelog
 ## [0.4.0] - 2025-08-08
 ### Added
-- Kanban column actions: add, remove, rename, reorder columns (admin only)
-- WIP limits: set and enforce per column, editable by admin
-- Safety net: tickets from deleted columns are moved to a special 'Holding' column (cannot be deleted if not empty)
-- Visual highlight and notification for Holding column and ticket moves
-- Drag-and-drop: robust, smooth, and cross-column ticket movement with drop indicators
-- Admin-only controls for column management
-- Dismissible notifications for ticket moves and blocked actions
 
 ### Fixed
-- Drag-and-drop bugs: stable hooks, SortableContext, and ticket order
-- Prevented ticket loss on column delete
-- Improved Kanban UX and accessibility
 
 ### Notes
-- This release completes the core Kanban admin/UX overhaul and safety features. Ready for further admin and bulk actions.
 
 
 # Changelog
-## [0.3.0] - 2025-07-31
-### Added
-- Schema-driven forms for customers and tickets, with dynamic rendering from config/schema
-- Admin-editable field groups (schema-ready) for ticket/customer forms and details views
-- Colored grouping boxes for workflow steps in ticket and customer details views
-- Phone number input masking (US/UK) in all forms for live formatting as user types
 - Phone extension fields for all phone numbers (edit and display)
 - Date fields now use proper date pickers in all forms
-- All phone numbers display formatted in details and search views
-- Roadmap and PRD updated to reflect new extensibility, admin, and UI features
-### Fixed
-- Customer/ticket details views now robustly render all schema fields, including phone formatting and extensions
 - UI polish: consistent field grouping, colored backgrounds, and improved layout
 ### Notes
-- This release completes the schema-driven forms and details card. Ready for merge to main.
-
 
 # Admin Backend TODO
 - User/role management: add admin, staff, and custom roles; restrict sensitive actions (delete, schema changes) to admins

@@ -27,6 +27,7 @@ export default function KanbanColumn({
 
   const colId = column.id;
   const isHolding = colId === 'holding';
+  const isIncoming = column.isIncoming;
   // Get tickets from kanban.tickets object
   const kanbanTickets = useAppStore(s => s.kanban.tickets);
   const tickets = ticketIds.map(id => kanbanTickets[id]).filter(Boolean);
@@ -38,11 +39,12 @@ export default function KanbanColumn({
       className={
         'flex-1 min-w-[260px] rounded-lg shadow p-2 flex flex-col transition-all ' +
         (isColOver ? ' ring-2 ring-blue-400' : '') +
-        (isHolding ? ' bg-yellow-100 border-2 border-yellow-400' : ' bg-gray-100')
+        (isHolding ? ' bg-yellow-100 border-2 border-yellow-400' : isIncoming ? ' bg-yellow-50 border-2 border-yellow-300' : ' bg-gray-100')
       }
     >
       <div className="flex items-center justify-between mb-2">
-        {ui.renaming ? (
+        {/* Prevent renaming for Incoming column */}
+        {ui.renaming && !isIncoming ? (
           <>
             <input
               className="border rounded px-2 py-1 text-lg font-bold"
@@ -56,8 +58,12 @@ export default function KanbanColumn({
           </>
         ) : (
           <>
-            <h2 className="font-bold text-lg text-gray-700 flex-1 truncate cursor-pointer" onClick={() => isAdmin && startRenameColumn(colId, column.name)}>{column.name}</h2>
-            {isAdmin && (
+            <h2 className={
+              'font-bold text-lg flex-1 truncate ' +
+              (isIncoming ? 'text-yellow-800' : 'text-gray-700')
+            }>{column.name}</h2>
+            {/* No controls for Incoming column */}
+            {isAdmin && !isIncoming && (
               <div className="flex items-center gap-1 ml-2">
                 <button title="Move Left" className="text-blue-600 hover:bg-blue-100 rounded p-1 text-xs" disabled={colIdx === 0} onClick={() => moveColumn(colId, -1)}>←</button>
                 <button title="Move Right" className="text-blue-600 hover:bg-blue-100 rounded p-1 text-xs" disabled={colIdx === kanban.columnOrder.length - 1} onClick={() => moveColumn(colId, 1)}>→</button>
@@ -67,26 +73,29 @@ export default function KanbanColumn({
           </>
         )}
       </div>
-      {/* WIP limit display and edit */}
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs text-gray-500">WIP: {column.wipLimit ? `${column.ticketIds.length}/${column.wipLimit}` : column.ticketIds.length}</span>
-        {isAdmin && (
-          <>
-            <input
-              type="number"
-              min="1"
-              className="border rounded px-1 py-0.5 w-14 text-xs"
-              placeholder="Set WIP"
-              value={ui.newWipLimit || ''}
-              onChange={e => setColUi((u) => ({ ...u, [colId]: { ...u[colId], newWipLimit: e.target.value } }))}
-              onKeyDown={e => e.key === 'Enter' && updateWipLimit(colId)}
-            />
-            <button className="text-blue-600 text-xs font-bold px-1" onClick={() => updateWipLimit(colId)}>Set</button>
-          </>
-        )}
-      </div>
+      {/* WIP limit display and edit - not for Incoming column */}
+      {!isIncoming && (
+        <div className="flex items-center gap-3 mb-2">
+          <span className="text-sm text-gray-700 font-semibold" style={{ fontSize: '115%' }}>WIP: {column.wipLimit ? `${column.ticketIds.length}/${column.wipLimit}` : column.ticketIds.length}</span>
+          {isAdmin && (
+            <>
+              <input
+                type="number"
+                min="1"
+                className="border rounded px-2 py-1 w-20 text-sm"
+                style={{ fontSize: '115%' }}
+                placeholder="Set WIP"
+                value={ui.newWipLimit || ''}
+                onChange={e => setColUi((u) => ({ ...u, [colId]: { ...u[colId], newWipLimit: e.target.value } }))}
+                onKeyDown={e => e.key === 'Enter' && updateWipLimit(colId)}
+              />
+              <button className="text-blue-600 text-sm font-bold px-2 py-1" style={{ fontSize: '115%' }} onClick={() => updateWipLimit(colId)}>Set</button>
+            </>
+          )}
+        </div>
+      )}
       {/* Render tickets for this column with DropIndicators */}
-      <SortableContext items={ticketIds} id={colId}>
+  <SortableContext items={ticketIds} id={colId} key={ticketIds.join(',')}>
         <div className="flex flex-col gap-2 flex-1">
           {/* DropIndicator before first ticket */}
           <DropIndicator colId={colId} index={0} />

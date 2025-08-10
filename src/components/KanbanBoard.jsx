@@ -15,12 +15,14 @@ export default function KanbanBoard() {
   const [holdingDeleteBlocked, setHoldingDeleteBlocked] = useState(false);
   // Per-column UI state: { [colId]: { renaming: bool, newColName: string, newWipLimit: string } }
   const [colUi, setColUi] = useState({});
+  // Notification for WIP limit violation
+  const [wipNotice, setWipNotice] = useState(null);
   const isAdmin = true; // TODO: Replace with real permission check
 
-  // Defensive checks for state
-  if (!kanban || !kanban.columns || !kanban.columnOrder) {
-    return <div className="text-center text-gray-400 p-8">Loading Kanban board...</div>;
-  }
+  // dnd-kit sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
 
   // Helper: returns true if ticket matches search and filter
   const ticketMatches = (ticket) => {
@@ -78,11 +80,6 @@ export default function KanbanBoard() {
   // Zustand actions
   const moveTicket = useAppStore((s) => s.moveTicket);
 
-  // dnd-kit sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  );
-
   // Robust handleDragEnd for per-column droppable and per-ticket drop indicators
   const handleDragEnd = (event) => {
     const { active, over } = event;
@@ -98,6 +95,10 @@ export default function KanbanBoard() {
       toColId = overId.replace('col-', '');
       const destCol = kanban.columns.find(col => col.id === toColId);
       if (!destCol) return;
+      if (destCol.wipLimit && destCol.ticketIds.length >= destCol.wipLimit) {
+        setWipNotice(`Cannot move ticket: "${destCol.name}" column is at its WIP limit (${destCol.wipLimit}).`);
+        return;
+      }
       moveTicket(activeId, toColId, destCol.ticketIds.length);
       return;
     }
@@ -106,7 +107,12 @@ export default function KanbanBoard() {
     if (overId && overId.startsWith('indicator-')) {
       const [_, col, idx] = overId.split('-');
       toColId = col;
+      const destCol = kanban.columns.find(col => col.id === toColId);
       const destIndex = parseInt(idx, 10);
+      if (destCol && destCol.wipLimit && destCol.ticketIds.length >= destCol.wipLimit) {
+        setWipNotice(`Cannot move ticket: "${destCol.name}" column is at its WIP limit (${destCol.wipLimit}).`);
+        return;
+      }
       moveTicket(activeId, toColId, destIndex);
       return;
     }
@@ -115,10 +121,15 @@ export default function KanbanBoard() {
     if (toColId && kanban.columns.find(col => col.id === toColId)?.ticketIds.includes(overId)) {
       const destCol = kanban.columns.find(col => col.id === toColId);
       const destIndex = destCol.ticketIds.indexOf(overId);
+      if (destCol && destCol.wipLimit && destCol.ticketIds.length >= destCol.wipLimit) {
+        setWipNotice(`Cannot move ticket: "${destCol.name}" column is at its WIP limit (${destCol.wipLimit}).`);
+        return;
+      }
       moveTicket(activeId, toColId, destIndex);
       return;
     }
   };
+
 
   // Track drag start
   const handleDragStart = (event) => {
@@ -131,6 +142,7 @@ export default function KanbanBoard() {
     activeTicket = kanban.tickets[activeDragId];
   }
 
+
   // Collect all unique assignees for filter dropdown
   const allAssignees = Array.from(
     new Set(
@@ -139,6 +151,7 @@ export default function KanbanBoard() {
         .filter(Boolean)
     )
   );
+
 
   // Column actions
   const addColumn = () => {
@@ -197,6 +210,17 @@ export default function KanbanBoard() {
 
   return (
     <div className="w-full">
+      {wipNotice && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-2 rounded shadow z-50 flex items-center gap-2">
+          <span>{wipNotice}</span>
+          <button
+            className="ml-2 px-2 py-0.5 rounded bg-yellow-200 text-yellow-900 text-xs font-semibold border border-yellow-400 hover:bg-yellow-300"
+            onClick={() => setWipNotice(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       {holdingDeleteBlocked && (
         <div className="bg-red-200 border-l-4 border-red-500 text-red-900 p-4 mb-4 flex items-center justify-between animate-pulse">
           <span className="font-bold">You must reassign or remove all tickets from the Holding column before deleting it.</span>
@@ -219,6 +243,7 @@ export default function KanbanBoard() {
         <div className="mb-2 flex items-center justify-center">
           <div className="bg-blue-100 border border-blue-400 text-blue-800 px-4 py-2 rounded flex items-center gap-2 text-lg font-semibold shadow">
             Board is sorted by <span className="capitalize">{sortBy}</span>
+
             <button
               className="ml-2 text-blue-800 hover:text-red-600 font-bold text-xl px-2"
               aria-label="Clear sort"
@@ -310,7 +335,12 @@ export function DropIndicator({ colId, index }) {
   return (
     <div
       ref={setNodeRef}
-      style={{ height: 16, zIndex: 50 }}
+      style={{
+        height: 16,
+        zIndex: 50,
+        pointerEvents: 'auto',
+        position: 'relative',
+      }}
       className={
         'w-full transition-all ' +
         (isOver ? 'bg-blue-600 rounded my-1 shadow-lg' : '')

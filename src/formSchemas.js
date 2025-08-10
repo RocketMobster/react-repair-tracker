@@ -178,6 +178,15 @@ export const ticketFormSchema = [
     maxLength: 512,
     order: 4,
   },
+  {
+    name: "attachments",
+    label: "Attachments",
+    type: "file",
+    required: false,
+    multiple: true,
+    order: 5,
+    help: "Upload images or documents related to this ticket."
+  },
   // Reception
   {
     name: "receptionDate",

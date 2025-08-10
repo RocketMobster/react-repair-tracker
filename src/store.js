@@ -14,6 +14,8 @@ export const useAppStore = create(
       plugins: [],
       rolePermissions: {},
       // Add more state as needed
+           // Placeholder for future barcode plugin
+           barcode: null,
       setCurrentUser: (user) => set({ currentUser: user }),
       setTickets: (tickets) => set({ tickets }),
       setCustomers: (customers) => set({ customers }),
@@ -25,21 +27,61 @@ export const useAppStore = create(
       // --- Kanban Board State ---
       kanban: {
         columns: [
-          { id: 'backlog', name: 'Backlog', wipLimit: null, maxTime: null, ticketIds: ['t1', 't2'] },
-          { id: 'inProgress', name: 'In Progress', wipLimit: null, maxTime: null, ticketIds: ['t3', 't4'] },
-          { id: 'review', name: 'Review', wipLimit: null, maxTime: null, ticketIds: ['t5'] },
-          { id: 'done', name: 'Done', wipLimit: null, maxTime: null, ticketIds: ['t6'] }
+          { id: 'backlog', name: 'Backlog', wipLimit: null, maxTime: null, ticketIds: [], defaultForNewTickets: false },
+          { id: 'inProgress', name: 'In Progress', wipLimit: null, maxTime: null, ticketIds: [], defaultForNewTickets: false },
+          { id: 'review', name: 'Review', wipLimit: null, maxTime: null, ticketIds: [], defaultForNewTickets: false },
+          { id: 'done', name: 'Done', wipLimit: null, maxTime: null, ticketIds: [], defaultForNewTickets: false }
         ],
         columnOrder: ['backlog', 'inProgress', 'review', 'done'],
-        tickets: {
-          t1: { id: 't1', title: 'Replace LCD Panel', rma: 'RMA-1001', company: 'Acme Corp', highPriority: true, createdAt: '2025-08-01T09:00:00Z', assignedTo: 'Alice', receivedAt: '2025-08-01T09:00:00Z', statusHistory: [{ columnId: 'backlog', enteredAt: '2025-08-01T09:00:00Z' }] },
-          t2: { id: 't2', title: 'Battery Not Charging', rma: 'RMA-1002', company: 'Beta LLC', highPriority: false, createdAt: '2025-08-02T10:00:00Z', assignedTo: 'Bob', receivedAt: '2025-08-02T10:00:00Z', statusHistory: [{ columnId: 'backlog', enteredAt: '2025-08-02T10:00:00Z' }] },
-          t3: { id: 't3', title: 'No Power', rma: 'RMA-1003', company: 'Acme Corp', highPriority: false, createdAt: '2025-08-03T11:00:00Z', assignedTo: 'Charlie', receivedAt: '2025-08-03T11:00:00Z', statusHistory: [{ columnId: 'inProgress', enteredAt: '2025-08-03T11:00:00Z' }] },
-          t4: { id: 't4', title: 'Keyboard Replacement', rma: 'RMA-1004', company: 'Delta Inc', highPriority: false, createdAt: '2025-08-04T12:00:00Z', assignedTo: 'Alice', receivedAt: '2025-08-04T12:00:00Z', statusHistory: [{ columnId: 'inProgress', enteredAt: '2025-08-04T12:00:00Z' }] },
-          t5: { id: 't5', title: 'Screen Flicker', rma: 'RMA-1005', company: 'Gamma Ltd', highPriority: true, createdAt: '2025-08-05T13:00:00Z', assignedTo: 'Bob', receivedAt: '2025-08-05T13:00:00Z', statusHistory: [{ columnId: 'review', enteredAt: '2025-08-05T13:00:00Z' }] },
-          t6: { id: 't6', title: 'Speaker Distortion', rma: 'RMA-1006', company: 'Acme Corp', highPriority: false, createdAt: '2025-08-06T14:00:00Z', assignedTo: 'Charlie', receivedAt: '2025-08-06T14:00:00Z', statusHistory: [{ columnId: 'done', enteredAt: '2025-08-06T14:00:00Z' }] },
-        }
+        tickets: {},
       },
+      // Set a column as the default for new tickets (admin only)
+      setDefaultKanbanColumn: (colId) => set(state => {
+        const columns = state.kanban.columns.map(col => ({ ...col, defaultForNewTickets: col.id === colId }));
+        return { kanban: { ...state.kanban, columns } };
+      }),
+
+      // Add or remove the Uncategorized column as needed
+      ensureUncategorizedColumn: () => set(state => {
+        let columns = [...state.kanban.columns];
+        let columnOrder = [...state.kanban.columnOrder];
+        let uncategorized = columns.find(col => col.id === 'uncategorized');
+        // Add if missing
+        if (!uncategorized) {
+          columns.push({ id: 'incoming', name: 'Incoming', wipLimit: null, maxTime: null, ticketIds: [], defaultForNewTickets: false, isIncoming: true });
+          columnOrder.unshift('incoming');
+        }
+        // Remove if empty
+        const incoming = columns.find(col => col.id === 'incoming');
+        if (incoming && incoming.ticketIds.length === 0) {
+          columns = columns.filter(col => col.id !== 'incoming');
+          columnOrder = columnOrder.filter(id => id !== 'incoming');
+        }
+        return { kanban: { ...state.kanban, columns, columnOrder } };
+      }),
+
+      // Assign tickets to persistent columns by statusHistory
+      assignTicketsToKanbanColumns: () => set((state) => {
+        const tickets = state.tickets || [];
+        // Clone columns and clear ticketIds
+        const columns = state.kanban.columns.map(col => ({ ...col, ticketIds: [] }));
+        const kanbanTickets = {};
+        tickets.forEach(ticket => {
+          const latestCol = (ticket.statusHistory && ticket.statusHistory.length > 0)
+            ? ticket.statusHistory[ticket.statusHistory.length - 1].columnId
+            : 'backlog';
+          const col = columns.find(c => c.id === latestCol) || columns[0];
+          col.ticketIds.push(ticket.id);
+          kanbanTickets[ticket.id] = ticket;
+        });
+        return {
+          kanban: {
+            ...state.kanban,
+            columns,
+            tickets: kanbanTickets,
+          }
+        };
+      }),
 
       // Kanban Actions
       updateKanbanColumnTitle: (colId, newTitle) => set((state) => {
@@ -88,8 +130,24 @@ export const useAppStore = create(
       addKanbanTicket: (ticket) => set((state) => {
         const kanban = { ...state.kanban };
         kanban.tickets[ticket.id] = ticket;
-        kanban.columns['backlog'].ticketIds.push(ticket.id);
-        return { kanban };
+        // Also add to main tickets array if not present
+        let ticketsArr = Array.isArray(state.tickets) ? [...state.tickets] : [];
+        if (!ticketsArr.find(t => t.id === ticket.id)) {
+          ticketsArr.push(ticket);
+        }
+        // Find default column
+        let defaultCol = kanban.columns.find(col => col.defaultForNewTickets);
+        if (!defaultCol) {
+          // Use Uncategorized if no default set
+          defaultCol = kanban.columns.find(col => col.id === 'incoming');
+          if (!defaultCol) {
+            defaultCol = { id: 'incoming', name: 'Incoming', wipLimit: null, maxTime: null, ticketIds: [], defaultForNewTickets: false, isIncoming: true };
+            kanban.columns.push(defaultCol);
+            kanban.columnOrder.unshift('incoming');
+          }
+        }
+        defaultCol.ticketIds.push(ticket.id);
+        return { kanban, tickets: ticketsArr };
       }),
       updateKanbanTicket: (ticket) => set((state) => {
         const kanban = { ...state.kanban };
@@ -102,7 +160,12 @@ export const useAppStore = create(
         Object.values(kanban.columns).forEach(col => {
           col.ticketIds = col.ticketIds.filter(id => id !== ticketId);
         });
-        return { kanban };
+        // Also remove from main tickets array if it exists
+        let newTickets = state.tickets;
+        if (Array.isArray(newTickets)) {
+          newTickets = newTickets.filter(t => t.id !== ticketId);
+        }
+        return { kanban, tickets: newTickets };
       }),
       addKanbanColumn: (name) => set(state => {
         const id = nanoid();

@@ -23,6 +23,7 @@ function CustomerForm({ onSave, initial = {}, isEdit }) {
   );
 }
 
+
 function CustomerSearch({ onSelect }) {
   const customersRaw = useAppStore(s => s.customers);
   const customers = Array.isArray(customersRaw) ? customersRaw : [];
@@ -70,9 +71,11 @@ function CustomerDetails({ customer, onEdit, onNewTicket, onDeleted }) {
   // Guard: if customer is missing (e.g., after deletion), do not render
   if (!customer) return null;
   // Always ensure tickets is an array to prevent errors after deletion
-  const tickets = useAppStore(s => Array.isArray(s.tickets) ? s.tickets : []);
+  const ticketsRaw = useAppStore.getState().tickets;
+  const tickets = Array.isArray(ticketsRaw) ? ticketsRaw : [];
   const setCustomers = useAppStore(s => s.setCustomers);
   const setTickets = useAppStore(s => s.setTickets);
+  const removeKanbanTicket = useAppStore(s => s.removeKanbanTicket);
   const customerTickets = tickets.filter(t => t.customerId === customer.id);
   const activeTickets = customerTickets.filter(t => t.status !== 'Completed');
   const completedTickets = customerTickets.filter(t => t.status === 'Completed');
@@ -81,8 +84,35 @@ function CustomerDetails({ customer, onEdit, onNewTicket, onDeleted }) {
   const [deleteMsg, setDeleteMsg] = useState("");
   const navigate = useNavigate();
 
+  // For ticket delete confirmation
+  const [ticketToDelete, setTicketToDelete] = useState(null);
+  const [showTicketDeleteConfirm, setShowTicketDeleteConfirm] = useState(false);
+  const [ticketDeleteMsg, setTicketDeleteMsg] = useState("");
+
   // TODO: Replace with real role check when user roles are implemented
   const userIsAdmin = true; // Placeholder for role-based access
+
+  // Kanban columns and default column logic for admin UI
+  const kanbanColumns = useAppStore(s => s.kanbanColumns) || [];
+  const setDefaultKanbanColumn = useAppStore(s => s.setDefaultKanbanColumn);
+  const defaultCol = kanbanColumns.find(col => col.defaultForNewTickets);
+
+  function handleDeleteTicket(ticketId) {
+    // Remove from Kanban and tickets array
+    removeKanbanTicket(ticketId);
+    // Use the latest tickets from the hook, not a callback
+    setTickets(Array.isArray(tickets) ? tickets.filter(t => t.id !== ticketId) : []);
+    setShowTicketDeleteConfirm(false);
+    setTicketDeleteMsg("Ticket deleted.");
+  }
+
+  // Clear ticketDeleteMsg after a short delay to avoid infinite re-render
+  React.useEffect(() => {
+    if (ticketDeleteMsg) {
+      const timeout = setTimeout(() => setTicketDeleteMsg(""), 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [ticketDeleteMsg]);
 
   function handleDeleteCustomer() {
     // Step 1: Navigate out to customer list
@@ -97,127 +127,185 @@ function CustomerDetails({ customer, onEdit, onNewTicket, onDeleted }) {
   }
 
   return (
-    <div className="bg-white p-4 rounded shadow mt-4">
-      <div className="mb-2">
-        <div className="text-2xl font-bold text-blue-900">
-          {customer.companyName || customer.businessName || '(No Company Name)'}
-        </div>
-      </div>
-      <div className="flex justify-between items-center mb-2">
-        <div></div>
-        <div className="flex gap-2">
-          <button onClick={onEdit} className="text-blue-600 underline">Edit</button>
-          {userIsAdmin && (
-            <>
-              <button
-                className="text-red-600 underline ml-2"
-                onClick={() => setShowDeleteConfirm(true)}
-                title="Delete customer and all tickets"
-              >Delete</button>
-            </>
-          )}
-        </div>
-      </div>
-      <div className="mb-2 p-4 rounded bg-blue-50">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {customerFormSchema
-            .filter(f => f.type !== 'hidden')
-            .sort((a, b) => (a.order || 0) - (b.order || 0))
-            .map(f => {
-              let value = customer[f.name] || '';
-              if (f.type === 'tel') {
-                value = formatPhoneNumber(value, customer[`${f.name}_country`] || 'US');
-                // If extension field exists, append it
-                const extField = f.name + 'Ext';
-                if (customer[extField]) {
-                  value = value + ` x${customer[extField]}`;
-                }
-              }
-              if (f.type === 'date' && value) {
-                value = new Date(value).toLocaleDateString();
-              }
-              return (
-                <div key={f.name}>
-                  <span className="font-semibold">{f.label}:</span> {value || <span className="text-gray-400">—</span>}
+    <div>
+      <div className="bg-white p-4 rounded shadow mt-4">
+        {/* Admin UI: Set default Kanban column for new tickets */}
+        {userIsAdmin && kanbanColumns.length > 0 && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+            <div className="font-semibold mb-2 text-yellow-900">Default Kanban Column for New Tickets</div>
+            <div className="flex flex-wrap gap-2">
+              {kanbanColumns.map(col => (
+                <div key={col.id} className="flex items-center gap-1">
+                  <span className={`px-2 py-1 rounded ${col.defaultForNewTickets ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}>{col.name}</span>
+                  {col.defaultForNewTickets ? (
+                    <button
+                      className="text-xs px-2 py-1 bg-gray-300 rounded hover:bg-gray-400 ml-1"
+                      onClick={() => setDefaultKanbanColumn(null)}
+                      title="Unset as default"
+                    >Unset</button>
+                  ) : (
+                    <button
+                      className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-700 ml-1"
+                      onClick={() => setDefaultKanbanColumn(col.id)}
+                      title="Set as default for new tickets"
+                    >Set Default</button>
+                  )}
                 </div>
-              );
-            })}
+              ))}
+            </div>
+            <div className="text-xs text-gray-600 mt-2">
+              {defaultCol
+                ? <>New tickets will appear in <span className="font-semibold text-blue-700">{defaultCol.name}</span> by default.</>
+                : <>No default set. New tickets will appear in <span className="font-semibold text-gray-700">Uncategorized</span> until a default is chosen.</>}
+            </div>
+            <div className="text-xs text-yellow-900 mt-1">(Admins: Set the default column for new tickets here. This setting is only visible to admins.)</div>
+          </div>
+        )}
+        <div className="mb-2">
+          <div className="text-2xl font-bold text-blue-900">
+            {customer.companyName || customer.businessName || '(No Company Name)'}
+          </div>
+        </div>
+        <div className="flex justify-between items-center mb-2">
+          <div></div>
+          <div className="flex gap-2">
+            <button onClick={onEdit} className="text-blue-600 underline">Edit</button>
+            {userIsAdmin && (
+              <>
+                <button
+                  className="text-red-600 underline ml-2"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  title="Delete customer and all tickets"
+                >Delete</button>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="mb-2 p-4 rounded bg-blue-50">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {customerFormSchema
+              .filter(f => f.type !== 'hidden')
+              .sort((a, b) => (a.order || 0) - (b.order || 0))
+              .map(f => {
+                let value = customer[f.name] || '';
+                if (f.type === 'tel') {
+                  value = formatPhoneNumber(value, customer[`${f.name}_country`] || 'US');
+                  // If extension field exists, append it
+                  const extField = f.name + 'Ext';
+                  if (customer[extField]) {
+                    value = value + ` x${customer[extField]}`;
+                  }
+                }
+                if (f.type === 'date' && value) {
+                  value = new Date(value).toLocaleDateString();
+                }
+                return (
+                  <div key={f.name}>
+                    <span className="font-semibold">{f.label}:</span> {value || <span className="text-gray-400">—</span>}
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+        <button onClick={onNewTicket} className="bg-green-600 text-white px-4 py-2 rounded mb-2">New Repair Ticket</button>
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
+            <div className="bg-white p-6 rounded shadow-lg max-w-sm w-full">
+              <div className="text-lg font-bold mb-2 text-red-700">Delete Customer?</div>
+              <div className="mb-4 text-gray-800">
+                Are you sure you want to delete <span className="font-semibold">{customer.businessName}</span>?<br />
+                They have <span className="font-semibold">{completedTickets.length}</span> completed and <span className="font-semibold">{activeTickets.length}</span> active tickets.<br />
+                <span className="text-red-600 font-semibold">Deleting the customer will remove all of these.</span>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button className="bg-gray-200 px-3 py-1 rounded" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+                <button className="bg-red-600 text-white px-3 py-1 rounded" onClick={handleDeleteCustomer}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {deleteMsg && <div className="text-green-700 mt-2" role="status">{deleteMsg}</div>}
+        <div className="mb-2">
+          <div className="font-semibold mb-1">Active Tickets</div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full border text-sm">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="px-2 py-1 text-left">RMA#</th>
+                  <th className="px-2 py-1 text-left">Ticket ID</th>
+                  <th className="px-2 py-1 text-left">Item</th>
+                  <th className="px-2 py-1 text-left">Status</th>
+                  <th className="px-2 py-1"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeTickets.map(t => {
+                  // Always show stored RMA number
+                  const rma = t.rmaNumber;
+                  return (
+                    <tr key={t.id} className="border-b">
+                      <td className="px-2 py-1 font-bold">{rma}</td>
+                      <td className="px-2 py-1 text-gray-400 text-xs">{t.id}</td>
+                      <td className="px-2 py-1">{t.item || 'Item'}</td>
+                      <td className="px-2 py-1">{t.status}</td>
+                      <td className="px-2 py-1 flex gap-2 items-center">
+                        <button className="text-blue-600 underline" onClick={() => navigate(`/customers/${customer.slug}/tickets/${t.id}`)}>View</button>
+                        {userIsAdmin && (
+                          <button
+                            className="text-red-600 underline ml-2"
+                            title="Delete ticket"
+                            onClick={() => { setTicketToDelete(t); setShowTicketDeleteConfirm(true); }}
+                          >Delete</button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {showCompleted && completedTickets.map(t => {
+                  const rma = t.rmaNumber;
+                  return (
+                    <tr key={t.id} className="border-b bg-gray-50">
+                      <td className="px-2 py-1 font-bold">{rma}</td>
+                      <td className="px-2 py-1 text-gray-400 text-xs">{t.id}</td>
+                      <td className="px-2 py-1">{t.item || 'Item'}</td>
+                      <td className="px-2 py-1">Completed{t.completedAt ? ` (${new Date(t.completedAt).toLocaleDateString()})` : ''}</td>
+                      <td className="px-2 py-1">
+                        <button className="text-blue-600 underline" onClick={() => navigate(`/customers/${customer.slug}/tickets/${t.id}`)}>View</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
+            <span><span className="font-bold">RMA#</span>: Return Merchandise Authorization Number</span>
+            <span><span className="text-gray-400">Ticket ID</span>: Internal unique ID</span>
+            <span><span className="font-bold">Item</span>: Item being repaired</span>
+            <span><span className="font-bold">Status</span>: Ticket status</span>
+          </div>
+          <button className="text-gray-700 underline mt-2" onClick={() => setShowCompleted(v => !v)}>
+            {completedTickets.length > 0 ? (showCompleted ? 'Hide Completed Tickets' : 'Show Completed Tickets') : 'No Completed Tickets'}
+          </button>
         </div>
       </div>
-      <button onClick={onNewTicket} className="bg-green-600 text-white px-4 py-2 rounded mb-2">New Repair Ticket</button>
-      {showDeleteConfirm && (
+      {/* Ticket delete confirmation modal and message OUTSIDE of <tbody> and after the table */}
+      {showTicketDeleteConfirm && ticketToDelete && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
           <div className="bg-white p-6 rounded shadow-lg max-w-sm w-full">
-            <div className="text-lg font-bold mb-2 text-red-700">Delete Customer?</div>
+            <div className="text-lg font-bold mb-2 text-red-700">Delete Ticket?</div>
             <div className="mb-4 text-gray-800">
-              Are you sure you want to delete <span className="font-semibold">{customer.businessName}</span>?<br />
-              They have <span className="font-semibold">{completedTickets.length}</span> completed and <span className="font-semibold">{activeTickets.length}</span> active tickets.<br />
-              <span className="text-red-600 font-semibold">Deleting the customer will remove all of these.</span>
+              Are you sure you want to delete ticket <span className="font-semibold">RMA #{ticketToDelete.rmaNumber}</span> ({ticketToDelete.item})?
+              <br />This action cannot be undone.
             </div>
             <div className="flex gap-2 justify-end">
-              <button className="bg-gray-200 px-3 py-1 rounded" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
-              <button className="bg-red-600 text-white px-3 py-1 rounded" onClick={handleDeleteCustomer}>Delete</button>
+              <button className="bg-gray-200 px-3 py-1 rounded" onClick={() => setShowTicketDeleteConfirm(false)}>Cancel</button>
+              <button className="bg-red-600 text-white px-3 py-1 rounded" onClick={() => handleDeleteTicket(ticketToDelete.id)}>Delete</button>
             </div>
           </div>
         </div>
       )}
-      {deleteMsg && <div className="text-green-700 mt-2" role="status">{deleteMsg}</div>}
-      <div className="mb-2">
-        <div className="font-semibold mb-1">Active Tickets</div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full border text-sm">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-2 py-1 text-left">RMA#</th>
-                <th className="px-2 py-1 text-left">Ticket ID</th>
-                <th className="px-2 py-1 text-left">Item</th>
-                <th className="px-2 py-1 text-left">Status</th>
-                <th className="px-2 py-1"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeTickets.map(t => {
-                // Always show RMA number, generate if missing
-                const rma = t.rmaNumber || generateRmaNumber();
-                return (
-                  <tr key={t.id} className="border-b">
-                    <td className="px-2 py-1 font-bold">{rma}</td>
-                    <td className="px-2 py-1 text-gray-400 text-xs">{t.id}</td>
-                    <td className="px-2 py-1">{t.item || 'Item'}</td>
-                    <td className="px-2 py-1">{t.status}</td>
-                    <td className="px-2 py-1">
-                      <button className="text-blue-600 underline" onClick={() => navigate(`/customers/${customer.slug}/tickets/${t.id}`)}>View</button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {showCompleted && completedTickets.map(t => {
-                const rma = t.rmaNumber || generateRmaNumber();
-                return (
-                  <tr key={t.id} className="border-b bg-gray-50">
-                    <td className="px-2 py-1 font-bold">{rma}</td>
-                    <td className="px-2 py-1 text-gray-400 text-xs">{t.id}</td>
-                    <td className="px-2 py-1">{t.item || 'Item'}</td>
-                    <td className="px-2 py-1">Completed{t.completedAt ? ` (${new Date(t.completedAt).toLocaleDateString()})` : ''}</td>
-                    <td className="px-2 py-1">
-                      <button className="text-blue-600 underline" onClick={() => navigate(`/customers/${customer.slug}/tickets/${t.id}`)}>View</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
-          <span><span className="font-bold">RMA#</span>: Return Merchandise Authorization Number</span>
-          <span><span className="text-gray-400">Ticket ID</span>: Internal unique ID</span>
-          <span><span className="font-bold">Item</span>: Item being repaired</span>
-          <span><span className="font-bold">Status</span>: Ticket status</span>
-        </div>
-        <button className="text-gray-700 underline mt-2" onClick={() => setShowCompleted(v => !v)}>
-          {completedTickets.length > 0 ? (showCompleted ? 'Hide Completed Tickets' : 'Show Completed Tickets') : 'No Completed Tickets'}
-        </button>
-      </div>
+      {ticketDeleteMsg && <div className="text-green-700 mt-2" role="status">{ticketDeleteMsg}</div>}
     </div>
   );
 }
@@ -275,28 +363,30 @@ function handleAddCustomer(data) {
   setAddError("");
   const slug = slugify(name);
   const newCustomer = { ...data, id: nanoid(), slug };
-  const newTicket = {
-    id: nanoid(),
-    customerId: newCustomer.id,
-    status: 'New',
-    createdAt: new Date().toISOString(),
-    item: '',
-  };
-  const safeTickets = Array.isArray(tickets) ? tickets : [];
   setCustomers([...customers, newCustomer]);
-  setTickets([...safeTickets, newTicket]);
   setSelected(newCustomer);
   setTicketMsg('New repair ticket created for this customer!');
   setMode('details');
+  // Use addKanbanTicket from the store to create the ticket in the correct column
+  const addKanbanTicket = useAppStore.getState().addKanbanTicket;
+  const ticketId = nanoid();
+  addKanbanTicket({
+    id: ticketId,
+    customerId: newCustomer.id,
+    status: 'New',
+    createdAt: new Date().toISOString(),
+    item: data.item || 'New Repair', // Use item from form if present
+    rmaNumber: generateRmaNumber(),
+  });
   setTimeout(() => {
-    navigate(`/customers/${newCustomer.slug}/tickets/${newTicket.id}`);
+    navigate(`/tickets/${ticketId}/edit`);
   }, 0);
 }
   function slugify(str) {
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)+/g, '');
+    return str
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)+/g, '');
   }
   function handleEditCustomer(data) {
     setCustomers(customers.map(c => c.id === editCustomer.id ? { ...editCustomer, ...data } : c));
@@ -316,17 +406,19 @@ function handleAddCustomer(data) {
   // ...existing code...
   function handleNewTicket() {
     if (!selected) return;
-    const newTicket = {
-      id: nanoid(),
+    // Use addKanbanTicket from the store to create the ticket in the correct column
+    const addKanbanTicket = useAppStore.getState().addKanbanTicket;
+    const ticketId = nanoid();
+    addKanbanTicket({
+      id: ticketId,
       customerId: selected.id,
       status: 'New',
       createdAt: new Date().toISOString(),
-      item: '',
+      item: 'New Repair', // Default item so card is not blank
       rmaNumber: generateRmaNumber(),
-    };
-    setTickets([...tickets, newTicket]);
+    });
     setTicketMsg('New repair ticket created for this customer!');
-    navigate(`/customers/${selected.slug}/tickets/${newTicket.id}`);
+    navigate(`/tickets/${ticketId}/edit`);
   }
   return (
     <div className="max-w-3xl mx-auto p-4">

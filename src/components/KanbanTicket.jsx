@@ -1,17 +1,27 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useAppStore } from '../store';
+import CardPreviewModal from './CardPreviewModal';
 
 export default function KanbanTicket({ ticket, colId, position }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: ticket.id,
-    data: { colId }
+    data: { colId },
   });
+  const [previewOpen, setPreviewOpen] = useState(false);
   const updateKanbanTicket = useAppStore((s) => s.updateKanbanTicket);
   const removeKanbanTicket = useAppStore((s) => s.removeKanbanTicket);
+  const customers = useAppStore((s) => s.customers) || [];
   const navigate = useNavigate();
+
+  // Lookup company name from customerId
+  let companyName = '—';
+  if (ticket.customerId) {
+    const customer = customers.find(c => c.id === ticket.customerId);
+    companyName = customer?.companyName || customer?.businessName || '—';
+  }
 
   // Quick action handlers
   const handleEdit = (e) => {
@@ -33,40 +43,64 @@ export default function KanbanTicket({ ticket, colId, position }) {
     e.stopPropagation();
     updateKanbanTicket({ ...ticket, highPriority: !ticket.highPriority });
   };
+
   return (
-    <div
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition: isDragging
-          ? transition || 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 200ms, opacity 200ms'
-          : 'transform 400ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 200ms, opacity 200ms',
-        opacity: isDragging ? 0.5 : 1,
-        zIndex: isDragging ? 100 : 'auto',
-      }}
-      className={`relative bg-white rounded shadow p-3 border cursor-move transition-colors ${ticket.highPriority ? 'border-red-500 ring-2 ring-red-400 bg-red-50' : 'border-gray-200'}`}
-    >
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-bold text-gray-400">#{position + 1}</span>
-        <div className="flex gap-1">
-          <button onClick={handleView} title="View Details" className="text-blue-600 hover:bg-blue-100 rounded p-1 text-xs">🔍</button>
-          <button onClick={handleEdit} title="Edit Ticket" className="text-yellow-600 hover:bg-yellow-100 rounded p-1 text-xs">✏️</button>
-          <button onClick={handleDelete} title="Delete Ticket" className="text-red-600 hover:bg-red-100 rounded p-1 text-xs">🗑️</button>
+    <>
+      <div
+        ref={setNodeRef}
+        style={{
+          transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+          transition,
+          opacity: isDragging ? 0.5 : 1,
+          zIndex: isDragging ? 50 : 1,
+        }}
+        className={
+          'bg-white rounded shadow p-3 mb-1 cursor-pointer select-none transition-all ' +
+          (isDragging ? 'ring-2 ring-blue-400' : '')
+        }
+        {...attributes}
+        {...listeners}
+        onClick={() => setPreviewOpen(true)}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-gray-400">#{position + 1}</span>
           <button
+            className={
+              'ml-2 px-2 py-0.5 rounded text-xs font-bold flex items-center ' +
+              (ticket.highPriority
+                ? 'bg-red-200 text-red-700 border border-red-400'
+                : 'bg-gray-100 text-gray-400 border border-gray-200 hover:bg-yellow-100 hover:text-yellow-600')
+            }
+            title={ticket.highPriority ? 'Remove high priority' : 'Mark as high priority'}
             onClick={togglePriority}
-            title={ticket.highPriority ? 'Unset High Priority' : 'Mark High Priority'}
-            className={`ml-2 text-xs px-2 py-1 rounded font-bold ${ticket.highPriority ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-red-100'}`}
+            tabIndex={0}
+            type="button"
+            style={{ outline: 'none' }}
+            onMouseDown={e => e.stopPropagation()}
           >
-            {ticket.highPriority ? 'HIGH' : 'Set High'}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4 mr-1"
+              fill={ticket.highPriority ? 'currentColor' : 'none'}
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={ticket.highPriority ? 0 : 2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
+              />
+            </svg>
+            {ticket.highPriority && 'HIGH'}
           </button>
         </div>
+  <div className="font-bold text-base text-gray-800 truncate">{ticket.item || '—'}</div>
+  <div className="text-xs text-gray-500 truncate">RMA: {ticket.rmaNumber || ticket.rma || '—'}</div>
+  <div className="text-xs text-gray-500 truncate">{companyName}</div>
+  {ticket.assignedTo && <div className="text-xs text-gray-400">Assigned: {ticket.assignedTo}</div>}
       </div>
-      <div className="font-semibold">{ticket.title}</div>
-      <div className="text-xs text-gray-500">ID: {ticket.id}</div>
-      {ticket.rma && <div className="text-xs text-gray-400">RMA: {ticket.rma}</div>}
-      {ticket.company && <div className="text-xs text-gray-400">Company: {ticket.company}</div>}
-    </div>
+      <CardPreviewModal key={ticket.id} ticket={ticket} open={previewOpen} onClose={() => setPreviewOpen(false)} />
+    </>
   );
 }

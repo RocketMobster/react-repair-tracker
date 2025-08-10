@@ -8,8 +8,11 @@ export default function DynamicForm({ schema, initialValues = {}, onSubmit }) {
   const [values, setValues] = useState(() => {
     const v = {};
     schema.forEach(f => {
-      v[f.name] = initialValues[f.name] || f.default || "";
-      // For phone fields with countrySelect, add a country value
+      if (f.type === "file") {
+        v[f.name] = initialValues[f.name] || [];
+      } else {
+        v[f.name] = initialValues[f.name] || f.default || "";
+      }
       if (f.type === "tel" && f.countrySelect) {
         v[`${f.name}_country`] = initialValues[`${f.name}_country`] || f.allowedCountries?.[0] || "US";
       }
@@ -63,6 +66,14 @@ export default function DynamicForm({ schema, initialValues = {}, onSubmit }) {
       const country = values[`${f.name}_country`] || f.allowedCountries?.[0] || "US";
       const raw = e.target.value.replace(/\D/g, "");
       setValues(v => ({ ...v, [f.name]: maskPhoneInput(raw, country) }));
+    } else if (f.type === "file") {
+      // Convert FileList to array of objects with filename, url, type
+      const files = Array.from(e.target.files).map(file => ({
+        filename: file.name,
+        url: URL.createObjectURL(file),
+        type: file.type
+      }));
+      setValues(v => ({ ...v, [f.name]: files }));
     } else {
       setValues(v => ({ ...v, [f.name]: e.target.value }));
     }
@@ -134,6 +145,32 @@ export default function DynamicForm({ schema, initialValues = {}, onSubmit }) {
               value={values[f.name]}
               onChange={e => handleChange(e, f)}
             />
+          ) : f.type === "file" ? (
+            <>
+              <input
+                className="border rounded px-2 py-1 w-full"
+                type="file"
+                multiple={f.multiple}
+                accept={f.accept || undefined}
+                onChange={e => handleChange(e, f)}
+              />
+              {Array.isArray(values[f.name]) && values[f.name].length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {values[f.name].map((file, idx) =>
+                    file && typeof file === 'object' && file.url && file.filename ? (
+                      <div key={file.url || file.filename} className="flex items-center gap-2">
+                        {file.type && file.type.startsWith('image') ? (
+                          <img src={file.url} alt={file.filename} className="w-12 h-12 object-cover rounded border" />
+                        ) : (
+                          <span className="inline-block w-12 h-12 bg-gray-200 rounded border flex items-center justify-center text-gray-500">📄</span>
+                        )}
+                        <a href={file.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline text-sm">{file.filename}</a>
+                      </div>
+                    ) : null
+                  )}
+                </div>
+              )}
+            </>
           ) : (
             <input
               className="border rounded px-2 py-1 w-full"
