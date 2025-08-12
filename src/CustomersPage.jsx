@@ -250,6 +250,23 @@ function CustomerDetails({ customer, onEdit, onNewTicket, onDeleted }) {
                       <td className="px-2 py-1">{t.status}</td>
                       <td className="px-2 py-1 flex gap-2 items-center">
                         <button className="text-blue-600 underline" onClick={() => navigate(`/customers/${customer.slug}/tickets/${t.id}`)}>View</button>
+                        <button
+                          className="text-green-600 underline ml-2"
+                          title="Restore to Kanban Board"
+                          onClick={() => {
+                            // Add ticket to Kanban board's incoming column
+                            const kanban = useAppStore.getState().kanban;
+                            let incoming = kanban.columns.find(col => col.id === 'incoming');
+                            if (!incoming) {
+                              incoming = { id: 'incoming', name: 'Incoming', wipLimit: null, maxTime: null, ticketIds: [], defaultForNewTickets: false, isIncoming: true };
+                              kanban.columns.unshift(incoming);
+                              kanban.columnOrder.unshift('incoming');
+                            }
+                            if (!incoming.ticketIds.includes(t.id)) {
+                              useAppStore.getState().addKanbanTicket(t);
+                            }
+                          }}
+                        >Restore to Board</button>
                         {userIsAdmin && (
                           <button
                             className="text-red-600 underline ml-2"

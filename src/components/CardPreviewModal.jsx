@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import ActivityFeed from './ActivityFeed';
 import { useAppStore } from '../store';
 import { useNavigate } from 'react-router-dom';
 
@@ -9,9 +10,11 @@ export default function CardPreviewModal({ ticket, open, onClose }) {
   const customers = useAppStore((s) => s.customers) || [];
   // Lookup company name from customerId
   let companyName = '—';
-  if (ticket && ticket.customerId) {
-    const customer = customers.find(c => c.id === ticket.customerId);
-    companyName = customer?.companyName || customer?.businessName || '—';
+    let customerSlug = null;
+    if (ticket && ticket.customerId) {
+      const customer = customers.find(c => c.id === ticket.customerId);
+      companyName = customer?.companyName || customer?.businessName || '—';
+      customerSlug = customer?.slug || customer?.id;
   }
   const navigate = useNavigate();
   useEffect(() => {
@@ -61,32 +64,79 @@ export default function CardPreviewModal({ ticket, open, onClose }) {
           </span>
         </button>
         <div className="flex items-center justify-between mb-2 relative">
-          {isAdmin && (
-            <button
-              className="absolute left-0 top-0 px-3 py-1 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300 z-20"
-              onClick={() => navigate(`/tickets/${ticket.id}/edit`)}
-              type="button"
-              title="Edit this ticket"
-              style={{ marginTop: 4, marginLeft: 4 }}
-            >
-              Edit
-            </button>
-          )}
+          <div className="flex gap-2 items-center">
+            {isAdmin && (
+              <button
+                className="px-3 py-1 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300 z-20"
+                onClick={() => navigate(`/tickets/${ticket.id}/edit`)}
+                type="button"
+                title="Edit this ticket"
+                style={{ marginTop: 4 }}
+              >
+                Edit
+              </button>
+            )}
+              <button
+                className="px-3 py-1 rounded bg-gray-700 text-white text-xs font-semibold hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400 z-20"
+                onClick={() => {
+                  if (customerSlug) {
+                    navigate(`/customers/${customerSlug}/tickets/${ticket.id}`);
+                  } else {
+                    navigate(`/tickets/${ticket.id}`);
+                  }
+                }}
+                type="button"
+                title="View full ticket details"
+                style={{ marginTop: 4 }}
+              >
+                View Details
+              </button>
+          </div>
           <h2 className="text-xl font-bold flex items-center gap-2 mx-auto">
             Ticket Preview
             {ticket.highPriority && <span className="ml-2 px-2 py-0.5 bg-red-200 text-red-700 rounded text-xs font-bold">HIGH</span>}
           </h2>
         </div>
-  <div className="mb-2 text-gray-700 font-bold text-lg">{ticket.item || '—'}</div>
-  <div className="mb-1 text-sm text-gray-500">RMA: {ticket.rmaNumber || ticket.rma || '—'}</div>
+  <div className="mb-2 text-gray-700 font-bold text-lg">RMA: {ticket.rmaNumber || ticket.rma || '—'}</div>
+  <div className="mb-2 text-gray-700 font-semibold">Item: {ticket.item || '—'}</div>
   <div className="mb-1 text-sm text-gray-500">Company: {companyName}</div>
   {ticket.assignedTo && <div className="mb-1 text-sm text-gray-500">Assigned: {ticket.assignedTo}</div>}
   <div className="mb-1 text-sm text-gray-500">Status: {ticket.statusHistory?.[ticket.statusHistory.length-1]?.columnId || ticket.status || '—'}</div>
   <div className="mb-1 text-sm text-gray-500">Created: {ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : '—'}</div>
-        {/* Description/notes placeholder */}
-        {ticket.description && (
-          <div className="mb-2 text-gray-600"><span className="font-semibold">Description:</span> {ticket.description}</div>
-        )}
+  {/* Description/notes */}
+  {ticket.description && (
+    <div className="mb-2 text-gray-600"><span className="font-semibold">Description:</span> {ticket.description}</div>
+  )}
+  {/* Reason for Return (built-in field) */}
+  {ticket.reason && (
+    <div className="mb-2 text-gray-600"><span className="font-semibold">Reason for Return:</span> {ticket.reason}</div>
+  )}
+  {/* Custom fields (use label, not name) */}
+  {ticket.customFields && Object.keys(ticket.customFields).length > 0 && (
+    <div className="mb-2 text-gray-600">
+      <span className="font-semibold">Custom Fields:</span>
+      <ul className="ml-4 list-disc">
+        {Object.entries(ticket.customFields).map(([key, value]) => {
+          // Try to get label from schema if available
+          let label = key;
+          if (Array.isArray(ticket.customFieldsSchema)) {
+            const found = ticket.customFieldsSchema.find(f => f.name === key);
+            if (found && found.label) label = found.label;
+          }
+          // Fallback: try global schema if available
+          if (label === key && window && window.customFieldsSchema) {
+            const found = window.customFieldsSchema.find(f => f.name === key);
+            if (found && found.label) label = found.label;
+          }
+          // Fallback: prettify key
+          if (label === key) label = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+          return (
+            <li key={key}><span className="font-semibold">{label}:</span> {String(value)}</li>
+          );
+        })}
+      </ul>
+    </div>
+  )}
         {/* Status history */}
         {ticket.statusHistory && ticket.statusHistory.length > 1 && (
           <div className="mt-4">
@@ -145,6 +195,10 @@ export default function CardPreviewModal({ ticket, open, onClose }) {
             </div>
           </div>
         )}
+        {/* Activity/comments feed (read-only in preview) */}
+        <div className="mt-6">
+          <ActivityFeed ticketId={ticket.id} className="bg-gray-50 border-none" />
+        </div>
         {/* Placeholder for custom fields */}
         {/* Future: Render any custom fields here */}
       </div>

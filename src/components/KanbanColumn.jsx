@@ -18,6 +18,7 @@ export default function KanbanColumn({
   updateWipLimit,
   kanban,
   ticketIds,
+  removing = false,
   ...rest
 }) {
   // dnd-kit hook is called here, not in the parent map
@@ -39,7 +40,8 @@ export default function KanbanColumn({
       className={
         'flex-1 min-w-[260px] rounded-lg shadow p-2 flex flex-col transition-all ' +
         (isColOver ? ' ring-2 ring-blue-400' : '') +
-        (isHolding ? ' bg-yellow-100 border-2 border-yellow-400' : isIncoming ? ' bg-yellow-50 border-2 border-yellow-300' : ' bg-gray-100')
+        (isHolding ? ' bg-yellow-100 border-2 border-yellow-400' : isIncoming ? ' bg-yellow-50 border-2 border-yellow-300' : ' bg-gray-100') +
+        (removing ? ' fade-out' : '')
       }
     >
       <div className="flex items-center justify-between mb-2">

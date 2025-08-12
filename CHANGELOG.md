@@ -13,11 +13,24 @@
 - UI polish: consistent field grouping, colored backgrounds, and improved layout
 ### Notes
 
+
 # Admin Backend TODO
 - User/role management: add admin, staff, and custom roles; restrict sensitive actions (delete, schema changes) to admins
+
+- [TODO] Restore-to-board tool: The 'Restore to Board' link in customer details is currently a dev tool for restoring RMAs to the Kanban board. Consider gating this feature for admin use only in production, as it may be necessary for admin recovery/maintenance.
 - Customizable form schemas: allow admin to edit ticket/customer form fields, types, and validation rules
+	- Add admin UI page with a code/text editor (e.g., Monaco, Ace, or textarea) to edit the JSON schema for custom fields directly in the app, with live preview and validation.
+	- Store the custom fields schema in app state (Zustand or backend DB), not just a static file, and persist changes from the admin UI.
+	- Changes to the schema should update the ticket form instantly for all users.
+	- Add schema validation in the admin UI to prevent invalid field definitions.
+- Drag-and-drop form builder for ticket form:
+	- Visual editor for admins to add, remove, and reorder fields (including custom fields) using drag-and-drop.
+	- Each field's config (name, label, type, required, etc.) is editable in the UI.
+	- On save, updates the schema in app state and persists it.
+	- The ticket form (DynamicForm) always renders based on the current schema, so changes are reflected instantly.
 - RMA number schema: allow client to set RMA number length (8-15), composition (numeric or alphanumeric), and first two fixed letters (prefix); expose settings in admin UI and persist for ticket creation; allow preview of RMA format
 - Ticket status and workflow customization: admin can define custom ticket statuses and allowed transitions
+- Add admin panel setting to toggle the comments/activity log in the Kanban card preview modal on or off for all cards in the board.
 - Data export/import: CSV/Excel export for tickets/customers, import for bulk onboarding
 - Audit log: track admin actions (deletes, edits, schema changes)
 - Branding: allow admin to upload logo, set business info, and customize PWA appearance
@@ -30,20 +43,28 @@
 - Kanban board configuration: admin can enable/disable Kanban board, set default columns/statuses, and control drag/drop permissions
 
 
+
 # Changelog
-## [0.2.1] - 2025-07-29
-### Added
-- RMA number generation for tickets: user-facing RMA number (default: 'ra' + 8 random alphanumeric characters) is now shown as the main ticket number, with internal ticket ID shown in smaller font
-- RMA number generator utility supports customizable prefix, length, and charset (numeric or alphanumeric) for future admin configuration
+## [0.6.0] - 2025-08-12
+### Major
+- Kanban board overhaul: robust drag-and-drop, admin-only column actions, WIP limits, and safety net for deleted columns
+- Ticket relationship management: parent/child/sibling/related, deduplication, error guards, and UI for adding/removing/searching related tickets
+- External links support for tickets
+- Card preview modal: now shows RMA as primary, item, reason for return, and custom fields with labels
+- Search improvements: search by RMA, item, company, notes, and custom fields
+- Restore-to-board tool for RMAs (dev/admin tool)
+- Custom field saving and display fixes (Serial Number, etc.)
+- Many UI/UX improvements and bugfixes
 
 ### Fixed
-- Bulletproofed customer/ticket deletion and navigation to prevent infinite update loops and errors
+- Custom fields now always save and display correctly
+- Card preview and Kanban card now show RMA as primary identifier
+- Related tickets deduplication and error handling
 
 ### Notes
-- Admin backend TODO: Add settings for RMA number schema (see above)
+- Restore-to-board tool is currently a dev/admin feature (see Admin Backend TODO)
 
-
-All notable changes to this project will be documented in this file.
+# Changelog
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 

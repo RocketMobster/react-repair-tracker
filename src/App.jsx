@@ -97,8 +97,9 @@ function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/tickets" element={currentUser ? <Tickets /> : <Navigate to="/login" />} />
         <Route path="/customers" element={currentUser ? <CustomersPage /> : <Navigate to="/login" />} />
-        <Route path="/customers/:customerId" element={currentUser ? <CustomersPage /> : <Navigate to="/login" />} />
+  <Route path="/customers/:customerId" element={currentUser ? <CustomersPage /> : <Navigate to="/login" />} />
   <Route path="/customers/:customerId/tickets/:ticketId" element={currentUser ? <TicketDetails /> : <Navigate to="/login" />} />
+  <Route path="/tickets/:ticketId" element={currentUser ? <TicketDetails /> : <Navigate to="/login" />} />
   <Route path="/tickets/:ticketId/edit" element={currentUser ? <TicketDetails editModeFromRoute /> : <Navigate to="/login" />} />
         <Route path="/admin" element={currentUser?.role === 'Admin' ? <Admin /> : <Navigate to="/login" />} />
         <Route path="/login" element={!currentUser ? <Login /> : <Navigate to="/" />} />

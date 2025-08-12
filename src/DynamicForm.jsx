@@ -4,7 +4,7 @@ import { formatPhoneNumber } from "./phoneFormat";
 // schema: array of field definitions
 // initialValues: object with initial values for each field
 // onSubmit: function(values)
-export default function DynamicForm({ schema, initialValues = {}, onSubmit }) {
+export default function DynamicForm({ schema, initialValues = {}, onSubmit, customFieldsSchema = [], initialCustomFields = {} }) {
   const [values, setValues] = useState(() => {
     const v = {};
     schema.forEach(f => {
@@ -17,6 +17,11 @@ export default function DynamicForm({ schema, initialValues = {}, onSubmit }) {
         v[`${f.name}_country`] = initialValues[`${f.name}_country`] || f.allowedCountries?.[0] || "US";
       }
     });
+    if (Array.isArray(customFieldsSchema)) {
+      customFieldsSchema.forEach(f => {
+        v[f.name] = initialCustomFields[f.name] || f.default || "";
+      });
+    }
     return v;
   });
   const [errors, setErrors] = useState({});
@@ -52,6 +57,17 @@ export default function DynamicForm({ schema, initialValues = {}, onSubmit }) {
   }
 
   function maskPhoneInput(val, country) {
+      // Validate custom fields
+      customFieldsSchema.forEach(f => {
+        const val = values[f.name];
+        if (f.required && !val) {
+          errs[f.name] = "Required";
+        } else if (f.minLength && val.length < f.minLength) {
+          errs[f.name] = `Minimum ${f.minLength} characters`;
+        } else if (f.maxLength && val.length > f.maxLength) {
+          errs[f.name] = `Maximum ${f.maxLength} characters`;
+        }
+      });
     // Only mask for US/UK, fallback to raw for others
     if (country === "US" || country === "UK") {
       return formatPhoneNumber(val.replace(/\D/g, ""), country);
@@ -89,7 +105,14 @@ export default function DynamicForm({ schema, initialValues = {}, onSubmit }) {
           output[`${f.name}_country`] = values[`${f.name}_country`];
         }
       });
-      onSubmit(output);
+      // Group custom fields into a customFields object
+      const customFields = {};
+      if (Array.isArray(customFieldsSchema)) {
+        customFieldsSchema.forEach(f => {
+          customFields[f.name] = values[f.name];
+        });
+      }
+      onSubmit({ ...output, customFields });
     }
   }
 

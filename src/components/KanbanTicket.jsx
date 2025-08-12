@@ -95,8 +95,8 @@ export default function KanbanTicket({ ticket, colId, position }) {
             {ticket.highPriority && 'HIGH'}
           </button>
         </div>
-  <div className="font-bold text-base text-gray-800 truncate">{ticket.item || '—'}</div>
-  <div className="text-xs text-gray-500 truncate">RMA: {ticket.rmaNumber || ticket.rma || '—'}</div>
+  <div className="font-bold text-base text-gray-800 truncate">RMA: {ticket.rmaNumber || ticket.rma || '—'}</div>
+  <div className="text-xs text-gray-700 font-semibold truncate">{ticket.item || '—'}</div>
   <div className="text-xs text-gray-500 truncate">{companyName}</div>
   {ticket.assignedTo && <div className="text-xs text-gray-400">Assigned: {ticket.assignedTo}</div>}
       </div>

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import '../components/kanban-animations.css';
 import { useAppStore } from '../store';
 import { DndContext, closestCorners, PointerSensor, useSensor, useSensors, DragOverlay, useDroppable } from '@dnd-kit/core';
 import KanbanColumn from './KanbanColumn';
@@ -7,6 +8,8 @@ import KanbanTicket from './KanbanTicket';
 // KanbanBoard: renders columns and tickets
 export default function KanbanBoard() {
   const kanban = useAppStore((s) => s.kanban);
+  const [removingColId, setRemovingColId] = useState(null);
+  const removeTimeoutRef = useRef();
   const [search, setSearch] = useState('');
   const [activeDragId, setActiveDragId] = useState(null);
   const [sortBy, setSortBy] = useState('');
@@ -32,7 +35,11 @@ export default function KanbanBoard() {
       (ticket.id && ticket.id.toLowerCase().includes(s)) ||
       (ticket.title && ticket.title.toLowerCase().includes(s)) ||
       (ticket.rma && ticket.rma.toLowerCase().includes(s)) ||
-      (ticket.company && ticket.company.toLowerCase().includes(s));
+      (ticket.rmaNumber && String(ticket.rmaNumber).toLowerCase().includes(s)) ||
+      (ticket.company && ticket.company.toLowerCase().includes(s)) ||
+      (ticket.notes && ticket.notes.toLowerCase().includes(s)) ||
+      (ticket.description && ticket.description.toLowerCase().includes(s)) ||
+      (ticket.customFields && Object.values(ticket.customFields).some(v => v && String(v).toLowerCase().includes(s)));
     const matchesAssignee = filterAssignee ? ticket.assignedTo === filterAssignee : true;
     return matchesSearch && matchesAssignee;
   };
@@ -78,7 +85,22 @@ export default function KanbanBoard() {
   const anyMatch = kanban.columnOrder.some((colId) => getFilteredTicketIds(colId).length > 0);
 
   // Zustand actions
-  const moveTicket = useAppStore((s) => s.moveTicket);
+  const moveTicket = (ticketId, toColId, toIdx) => {
+    // Find if this is the last ticket in Incoming column
+    const incomingCol = kanban.columns.find(col => col.id === 'incoming');
+    const fromCol = kanban.columns.find(col => col.ticketIds.includes(ticketId));
+    if (fromCol && fromCol.id === 'incoming' && incomingCol && incomingCol.ticketIds.length === 1) {
+      setRemovingColId('incoming');
+      // Delay actual move to allow animation
+      clearTimeout(removeTimeoutRef.current);
+      removeTimeoutRef.current = setTimeout(() => {
+        useAppStore.getState().moveTicket(ticketId, toColId, toIdx);
+        setRemovingColId(null);
+      }, 400); // match CSS duration
+      return;
+    }
+    useAppStore.getState().moveTicket(ticketId, toColId, toIdx);
+  };
 
   // Robust handleDragEnd for per-column droppable and per-ticket drop indicators
   const handleDragEnd = (event) => {
@@ -311,6 +333,7 @@ export default function KanbanBoard() {
               updateWipLimit={updateWipLimit}
               kanban={kanban}
               ticketIds={getFilteredTicketIds(column)}
+              removing={removingColId === column.id}
             />
           ))}
         </div>

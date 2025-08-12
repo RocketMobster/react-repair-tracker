@@ -134,67 +134,70 @@ export const customerFormSchema = [
   },
 ];
 
-export const ticketFormSchema = [
-  {
-    name: "highPriority",
-    label: "High Priority",
-    type: "checkbox",
-    required: false,
-    order: 1,
-    help: "Mark this ticket as high priority. High priority tickets are highlighted in the Kanban board."
-  },
-  {
-    name: "assignedTo",
-    label: "Assigned Technician",
-    type: "text", // Change to select when user/tech management is ready
-    required: false,
-    order: 1.5,
-    help: "Technician assigned to this ticket."
-  },
-  {
-    name: "status",
-    label: "Status",
-    type: "select",
-    required: true,
-    options: ["New", "In Progress", "Repaired", "Shipped"],
-    default: "New",
-    order: 2,
-  },
-  {
-    name: "item",
-    label: "Item",
-    type: "text",
-    required: true,
-    minLength: 2,
-    maxLength: 64,
-    order: 3,
-  },
-  {
-    name: "reason",
-    label: "Reason for Return",
-    type: "textarea",
-    required: true,
-    minLength: 5,
-    maxLength: 512,
-    order: 4,
-  },
-  {
-    name: "attachments",
-    label: "Attachments",
-    type: "file",
-    required: false,
-    multiple: true,
-    order: 5,
-    help: "Upload images or documents related to this ticket."
-  },
-  // Reception
-  {
-    name: "receptionDate",
-    label: "Reception Date",
-    type: "date",
-    required: false,
-    order: 10,
-  },
+// Helper to merge custom fields into the ticket schema at runtime
+export function getTicketFormSchema(customFields = []) {
+  // Merge built-in fields with custom fields (custom fields come last, can override by name)
+  const builtIn = [
+    {
+      name: "highPriority",
+      label: "High Priority",
+      type: "checkbox",
+      required: false,
+      order: 1,
+      help: "Mark this ticket as high priority. High priority tickets are highlighted in the Kanban board."
+    },
+    {
+      name: "assignedTo",
+      label: "Assigned Technician",
+      type: "text", // Change to select when user/tech management is ready
+      required: false,
+      order: 1.5,
+      help: "Technician assigned to this ticket."
+    },
+    {
+      name: "status",
+      label: "Status",
+      type: "select",
+      required: true,
+      options: ["New", "In Progress", "Repaired", "Shipped"],
+      default: "New",
+      order: 2,
+    },
+    {
+      name: "item",
+      label: "Item",
+      type: "text",
+      required: true,
+      minLength: 2,
+      maxLength: 64,
+      order: 3,
+    },
+    {
+      name: "reason",
+      label: "Reason for Return",
+      type: "textarea",
+      required: true,
+      minLength: 5,
+      maxLength: 512,
+      order: 4,
+    },
+    {
+      name: "attachments",
+      label: "Attachments",
+      type: "file",
+      required: false,
+      multiple: true,
+      order: 5,
+      help: "Upload images or documents related to this ticket."
+    },
+    // Reception
+    {
+      name: "receptionDate",
+      label: "Reception Date",
+      type: "date",
+      required: false,
+      order: 10,
+    },
   {
     name: "receptionEmployee",
     label: "Reception Employee",
@@ -271,15 +274,26 @@ export const ticketFormSchema = [
     required: false,
     order: 41,
   },
-  {
-    name: "shippedNotes",
-    label: "Shipping Notes",
-    type: "textarea",
-    required: false,
-    maxLength: 512,
-    order: 42,
-  },
-];
+
+    {
+      name: "shippedNotes",
+      label: "Shipping Notes",
+      type: "textarea",
+      required: false,
+      maxLength: 512,
+      order: 42,
+    },
+  ];
+  // Merge custom fields (by name, custom fields override built-in if same name)
+  const byName = {};
+  for (const f of builtIn) byName[f.name] = f;
+  for (const f of customFields) byName[f.name] = f;
+  // Return as sorted array
+  return Object.values(byName).sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+
+// For legacy code, keep the default export as the built-in schema
+export const ticketFormSchema = getTicketFormSchema();
 
 // Field groups for ticket details UI and admin customization
 export const ticketFieldGroups = [

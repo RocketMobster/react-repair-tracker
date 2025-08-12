@@ -1,4 +1,4 @@
-# RMA Repair Tracker v0.4.0
+# RMA Repair Tracker v0.6.0
 
 This project is a React + Vite + Tailwind CSS Progressive Web App (PWA).
 
@@ -12,6 +12,7 @@ This project is a React + Vite + Tailwind CSS Progressive Web App (PWA).
    ```
    npm run dev
    ```
+
 
 
 ## Features
@@ -29,9 +30,12 @@ This project is a React + Vite + Tailwind CSS Progressive Web App (PWA).
 - Date fields use proper date pickers in all forms
 - All phone numbers display formatted in details and search views
 - Modern, responsive UI with Tailwind
+- Ticket relationship management (parent/child/sibling/related, deduplication, error guards, add/search/remove UI)
+- External links for tickets
+- Card preview modal with RMA as primary, item, reason for return, and custom fields
+- Restore-to-board tool for RMAs (dev/admin tool)
+- Custom field saving and display fixes
 
 
 ## Roadmap & Documentation
-- Dashboard implementation will include core widgets (metrics, recent activity, etc.).
-- Advanced dashboard customization (add/remove/rearrange widgets, custom reports, integrations) may be offered as a plugin or paid upgrade in the future.
 - See `ROADMAP.md` and `repairtracker_prd.md` for full feature set, admin extensibility, and future plans.

@@ -42,7 +42,11 @@ RepairTracker Pro is a React + Vite + Tailwind CSS Progressive Web App (PWA) for
     - Page listing all tickets (active and closed), searchable by RMA number, company name, or ticket number.
 - [ ] Kanban board for ticket prioritization
     - Drag-and-drop Kanban board for ticket workflow, status management, and prioritization. Enterprise-level feature for real-time ticket management.
-    - [x] Card details preview (quick view/hover) with robust attachment and ticket info rendering (v0.5.0)
+    - [x] Card details preview (quick view/hover) with robust attachment and ticket info rendering (v0.6.0)
+    - [x] Ticket relationship management (parent/child/sibling/related, deduplication, error guards, add/search/remove UI) (v0.6.0)
+    - [x] External links for tickets (v0.6.0)
+    - [x] Restore-to-board tool for RMAs (dev/admin tool) (v0.6.0)
+    - [x] Custom field saving and display fixes (v0.6.0)
 
 
 

@@ -117,7 +117,15 @@ export const useAppStore = create(
             { columnId: toColId, enteredAt: now }
           ];
         }
-        return { kanban: { ...state.kanban, columns: [...state.kanban.columns], tickets: { ...state.kanban.tickets, [ticketId]: { ...ticket } } } };
+        // Remove Incoming column if empty after move
+        let columns = [...state.kanban.columns];
+        let columnOrder = [...state.kanban.columnOrder];
+        const incoming = columns.find(col => col.id === 'incoming');
+        if (incoming && incoming.ticketIds.length === 0 && fromCol.id === 'incoming') {
+          columns = columns.filter(col => col.id !== 'incoming');
+          columnOrder = columnOrder.filter(id => id !== 'incoming');
+        }
+        return { kanban: { ...state.kanban, columns, columnOrder, tickets: { ...state.kanban.tickets, [ticketId]: { ...ticket } } } };
       }),
       reorderTicket: (colId, startIndex, endIndex) => set((state) => {
         const kanban = { ...state.kanban };
@@ -129,11 +137,19 @@ export const useAppStore = create(
       }),
       addKanbanTicket: (ticket) => set((state) => {
         const kanban = { ...state.kanban };
-        kanban.tickets[ticket.id] = ticket;
+        // Ensure ticket has an activity/comments array and a customFields object
+        const ticketWithActivity = {
+          ...ticket,
+          activity: Array.isArray(ticket.activity) ? ticket.activity : [],
+          customFields: typeof ticket.customFields === 'object' && ticket.customFields !== null ? ticket.customFields : {},
+          relatedTickets: Array.isArray(ticket.relatedTickets) ? ticket.relatedTickets : [],
+          externalLinks: Array.isArray(ticket.externalLinks) ? ticket.externalLinks : [],
+        };
+        kanban.tickets[ticket.id] = ticketWithActivity;
         // Also add to main tickets array if not present
         let ticketsArr = Array.isArray(state.tickets) ? [...state.tickets] : [];
         if (!ticketsArr.find(t => t.id === ticket.id)) {
-          ticketsArr.push(ticket);
+          ticketsArr.push(ticketWithActivity);
         }
         // Find default column
         let defaultCol = kanban.columns.find(col => col.defaultForNewTickets);
@@ -149,6 +165,27 @@ export const useAppStore = create(
         defaultCol.ticketIds.push(ticket.id);
         return { kanban, tickets: ticketsArr };
       }),
+
+      // Add an activity/comment to a ticket
+      addTicketActivity: (ticketId, activity) => set((state) => {
+        // activity: { id, type, text, author, timestamp, ... }
+        const kanban = { ...state.kanban };
+        const ticket = kanban.tickets[ticketId];
+        if (!ticket) return {};
+        const newActivity = { ...activity, id: activity.id || nanoid(), timestamp: activity.timestamp || new Date().toISOString() };
+        ticket.activity = Array.isArray(ticket.activity) ? [...ticket.activity, newActivity] : [newActivity];
+        kanban.tickets[ticketId] = { ...ticket };
+        // Also update in main tickets array
+        let ticketsArr = Array.isArray(state.tickets) ? state.tickets.map(t => t.id === ticketId ? { ...ticket } : t) : [];
+        return { kanban, tickets: ticketsArr };
+      }),
+
+      // Get activities/comments for a ticket
+      getTicketActivity: (ticketId) => {
+        const state = useAppStore.getState();
+        const ticket = state.kanban.tickets[ticketId];
+        return ticket && Array.isArray(ticket.activity) ? ticket.activity : [];
+      },
       updateKanbanTicket: (ticket) => set((state) => {
         const kanban = { ...state.kanban };
         kanban.tickets[ticket.id] = { ...kanban.tickets[ticket.id], ...ticket };
