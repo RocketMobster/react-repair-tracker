@@ -249,7 +249,12 @@ function CustomerDetails({ customer, onEdit, onNewTicket, onDeleted }) {
                       <td className="px-2 py-1">{t.item || 'Item'}</td>
                       <td className="px-2 py-1">{t.status}</td>
                       <td className="px-2 py-1 flex gap-2 items-center">
-                        <button className="text-blue-600 underline" onClick={() => navigate(`/customers/${customer.slug}/tickets/${t.id}`)}>View</button>
+                        <button className="text-blue-600 underline" onClick={() => {
+                          console.log('Navigating to ticket with ID:', t.id);
+                          console.log('Customer data:', customer);
+                          // Use customer.id instead of customer.slug which may not exist
+                          navigate(`/customers/${customer.id}/tickets/${t.id}`);
+                        }}>View</button>
                         <button
                           className="text-green-600 underline ml-2"
                           title="Restore to Kanban Board"
@@ -287,7 +292,10 @@ function CustomerDetails({ customer, onEdit, onNewTicket, onDeleted }) {
                       <td className="px-2 py-1">{t.item || 'Item'}</td>
                       <td className="px-2 py-1">Completed{t.completedAt ? ` (${new Date(t.completedAt).toLocaleDateString()})` : ''}</td>
                       <td className="px-2 py-1">
-                        <button className="text-blue-600 underline" onClick={() => navigate(`/customers/${customer.slug}/tickets/${t.id}`)}>View</button>
+                        <button className="text-blue-600 underline" onClick={() => {
+                          console.log('Navigating to completed ticket with ID:', t.id);
+                          navigate(`/customers/${customer.id}/tickets/${t.id}`);
+                        }}>View</button>
                       </td>
                     </tr>
                   );
@@ -423,19 +431,11 @@ function handleAddCustomer(data) {
   // ...existing code...
   function handleNewTicket() {
     if (!selected) return;
-    // Use addKanbanTicket from the store to create the ticket in the correct column
-    const addKanbanTicket = useAppStore.getState().addKanbanTicket;
-    const ticketId = nanoid();
-    addKanbanTicket({
-      id: ticketId,
-      customerId: selected.id,
-      status: 'New',
-      createdAt: new Date().toISOString(),
-      item: 'New Repair', // Default item so card is not blank
-      rmaNumber: generateRmaNumber(),
-    });
-    setTicketMsg('New repair ticket created for this customer!');
-    navigate(`/tickets/${ticketId}/edit`);
+    // Navigate directly to the edit form for a new ticket
+    console.log('Creating new ticket for customer:', selected);
+    const url = `/customers/${selected.id}/tickets/new/edit`;
+    console.log('Navigating to URL:', url);
+    navigate(url);
   }
   return (
     <div className="max-w-3xl mx-auto p-4">

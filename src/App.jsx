@@ -1,10 +1,11 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, Link, Navigate } from 'react-router-dom';
 import TicketDetails from './TicketDetails';
 import KanbanBoard from './components/KanbanBoard';
 import CustomersPage from './CustomersPage';
 import { useAppStore } from './store';
+import { initializeSampleData } from './sampleData';
 
 function Dashboard() {
   return <div className="p-8"><h2 className="text-2xl font-bold mb-2">Dashboard</h2><p>Overview and widgets go here.</p></div>;
@@ -70,6 +71,18 @@ function Login() {
 function App() {
   const currentUser = useAppStore((s) => s.currentUser);
   const setCurrentUser = useAppStore((s) => s.setCurrentUser);
+  const tickets = useAppStore(s => s.tickets);
+  const customers = useAppStore(s => s.customers);
+  const setTickets = useAppStore(s => s.setTickets);
+  const setCustomers = useAppStore(s => s.setCustomers);
+
+  // Initialize sample data when app loads if store is empty
+  useEffect(() => {
+    console.log('App mounted - checking if sample data initialization is needed');
+    console.log('Current tickets:', tickets?.length || 0, 'Current customers:', customers?.length || 0);
+    const initialized = initializeSampleData({ tickets, customers, setTickets, setCustomers });
+    console.log('Sample data initialization result:', initialized ? 'Data initialized' : 'No initialization needed');
+  }, []);
 
   function handleLogout() {
     setCurrentUser(null);
@@ -98,6 +111,12 @@ function App() {
         <Route path="/tickets" element={currentUser ? <Tickets /> : <Navigate to="/login" />} />
         <Route path="/customers" element={currentUser ? <CustomersPage /> : <Navigate to="/login" />} />
   <Route path="/customers/:customerId" element={currentUser ? <CustomersPage /> : <Navigate to="/login" />} />
+  <Route 
+    path="/customers/:customerId/tickets/new/edit" 
+    element={currentUser ? 
+      <TicketDetails editModeFromRoute={true} /> 
+      : <Navigate to="/login" />} 
+  />
   <Route path="/customers/:customerId/tickets/:ticketId" element={currentUser ? <TicketDetails /> : <Navigate to="/login" />} />
   <Route path="/tickets/:ticketId" element={currentUser ? <TicketDetails /> : <Navigate to="/login" />} />
   <Route path="/tickets/:ticketId/edit" element={currentUser ? <TicketDetails editModeFromRoute /> : <Navigate to="/login" />} />

@@ -135,7 +135,13 @@ export const customerFormSchema = [
 ];
 
 // Helper to merge custom fields into the ticket schema at runtime
-export function getTicketFormSchema(customFields = []) {
+export function getTicketFormSchema(options = {}) {
+  // Handle null/undefined options safely
+  if (!options) options = {};
+  
+  // Extract customFields from options, defaulting to empty array
+  const customFields = Array.isArray(options) ? options : (options.customFields || []);
+  
   // Merge built-in fields with custom fields (custom fields come last, can override by name)
   const builtIn = [
     {

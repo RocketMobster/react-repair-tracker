@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 const isAdmin = true;
 
 export default function CardPreviewModal({ ticket, open, onClose }) {
+  console.log('CardPreviewModal ticket:', ticket);
   const customers = useAppStore((s) => s.customers) || [];
   // Lookup company name from customerId
   let companyName = '—';
@@ -97,8 +98,41 @@ export default function CardPreviewModal({ ticket, open, onClose }) {
             {ticket.highPriority && <span className="ml-2 px-2 py-0.5 bg-red-200 text-red-700 rounded text-xs font-bold">HIGH</span>}
           </h2>
         </div>
+        {/* Group pill labels if groupColors are set */}
+        {(ticket.groupColors && ticket.groupColors.length > 0) ? (
+          <div className="flex flex-wrap gap-1 mb-2">
+            {/* Deduplicate group colors by their color value */}
+            {Array.from(new Set(ticket.groupColors
+              .filter(g => g && typeof g === 'object' && g.id && g.color) // Filter out invalid entries
+              .map(g => g.color))) // Get unique colors
+              .map((color, idx) => (
+                <span
+                  key={`color-${idx}-${color.replace('#', '')}`}
+                  className="inline-block px-3 py-0.5 rounded-full text-xs font-semibold"
+                  style={{ 
+                    backgroundColor: color, 
+                    color: '#fff', 
+                    border: `2px solid ${color}` 
+                  }}
+                  title="This ticket is part of a group"
+                >
+                  Group
+                </span>
+              ))
+            }
+          </div>
+        ) : ticket.groupColor ? (
+          // Backward compatibility for old data structure
+          <span
+            className="inline-block px-3 py-0.5 rounded-full text-xs font-semibold mb-2 mr-2"
+            style={{ backgroundColor: ticket.groupColor, color: '#fff', border: `2px solid ${ticket.groupColor}` }}
+            title="This ticket is part of a group"
+          >
+            Group
+          </span>
+        ) : null}
   <div className="mb-2 text-gray-700 font-bold text-lg">RMA: {ticket.rmaNumber || ticket.rma || '—'}</div>
-  <div className="mb-2 text-gray-700 font-semibold">Item: {ticket.item || '—'}</div>
+  <div className="mb-2 text-gray-700 font-semibold">Item: {ticket.item && ticket.item !== 'New Item' ? ticket.item : (ticket.item || '—')}</div>
   <div className="mb-1 text-sm text-gray-500">Company: {companyName}</div>
   {ticket.assignedTo && <div className="mb-1 text-sm text-gray-500">Assigned: {ticket.assignedTo}</div>}
   <div className="mb-1 text-sm text-gray-500">Status: {ticket.statusHistory?.[ticket.statusHistory.length-1]?.columnId || ticket.status || '—'}</div>
@@ -107,28 +141,26 @@ export default function CardPreviewModal({ ticket, open, onClose }) {
   {ticket.description && (
     <div className="mb-2 text-gray-600"><span className="font-semibold">Description:</span> {ticket.description}</div>
   )}
-  {/* Reason for Return (built-in field) */}
-  {ticket.reason && (
-    <div className="mb-2 text-gray-600"><span className="font-semibold">Reason for Return:</span> {ticket.reason}</div>
+  {/* Reason for Repair (built-in field) - always show if present */}
+  {typeof ticket.reason !== 'undefined' && ticket.reason !== '' && (
+    <div className="mb-2 text-gray-600"><span className="font-semibold">Reason for Repair:</span> {ticket.reason}</div>
   )}
+  {/* Serial Number (custom field) - always show if present */}
   {/* Custom fields (use label, not name) */}
   {ticket.customFields && Object.keys(ticket.customFields).length > 0 && (
     <div className="mb-2 text-gray-600">
       <span className="font-semibold">Custom Fields:</span>
       <ul className="ml-4 list-disc">
         {Object.entries(ticket.customFields).map(([key, value]) => {
-          // Try to get label from schema if available
           let label = key;
           if (Array.isArray(ticket.customFieldsSchema)) {
             const found = ticket.customFieldsSchema.find(f => f.name === key);
             if (found && found.label) label = found.label;
           }
-          // Fallback: try global schema if available
           if (label === key && window && window.customFieldsSchema) {
             const found = window.customFieldsSchema.find(f => f.name === key);
             if (found && found.label) label = found.label;
           }
-          // Fallback: prettify key
           if (label === key) label = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
           return (
             <li key={key}><span className="font-semibold">{label}:</span> {String(value)}</li>
@@ -137,6 +169,46 @@ export default function CardPreviewModal({ ticket, open, onClose }) {
       </ul>
     </div>
   )}
+        {/* Related RMAs section */}
+        {Array.isArray(ticket.relatedTickets) && ticket.relatedTickets.length > 0 && (
+          <div className="mb-2">
+            <span className="font-semibold">Related RMAs:</span>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {ticket.relatedTickets.map((rel, idx) => {
+                // Get actual ticket to show the real RMA number
+                const relId = typeof rel === 'object' ? rel.id : rel;
+                const allTickets = useAppStore.getState()?.tickets || [];
+                const relTicket = Array.isArray(allTickets) 
+                  ? allTickets.find(t => t.id === relId) 
+                  : null;
+                const rmaNumber = relTicket ? (relTicket.rmaNumber || relTicket.rma || relTicket.id) : relId;
+                
+                // Find the color for this relationship
+                // First try to find a matching group in groupColors
+                let relationColor = ticket.groupColor || '#6B7280'; // Default fallback
+                
+                // If the related ticket has group colors, use the first one as fallback
+                if (relTicket && relTicket.groupColors && relTicket.groupColors.length > 0) {
+                  relationColor = relTicket.groupColors[0].color;
+                } else if (relTicket && relTicket.groupColor) {
+                  relationColor = relTicket.groupColor;
+                }
+                
+                return (
+                  <span
+                    key={relId || idx}
+                    className="inline-block px-3 py-0.5 rounded-full text-xs font-semibold cursor-pointer hover:opacity-80"
+                    style={{ backgroundColor: relationColor, color: '#fff', border: `2px solid ${relationColor}` }}
+                    title={`View RMA #${rmaNumber}`}
+                    onClick={() => navigate(`/tickets/${relId}`)}
+                  >
+                    RMA #{rmaNumber}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {/* Status history */}
         {ticket.statusHistory && ticket.statusHistory.length > 1 && (
           <div className="mt-4">

@@ -1,0 +1,1158 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { nanoid } from 'nanoid';
+import { SketchPicker } from 'react-color';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAppStore } from './store';
+import { ticketFieldGroups, ticketFormSchema, getTicketFormSchema } from './formSchemas';
+import ActivityFeed from './components/ActivityFeed';
+import DynamicForm from './DynamicForm';
+
+// Helper to render attachments safely
+function renderAttachments(attachments) {
+  if (!attachments || !Array.isArray(attachments) || attachments.length === 0) return null;
+  
+  return (
+    <div className="mt-4">
+      <div className="font-semibold text-gray-700 mb-2">Attachments:</div>
+      <div className="flex flex-col gap-2">
+        {attachments.map((file, i) => {
+          if (!file || typeof file !== 'object' || Array.isArray(file)) return null;
+          
+          return (
+            <div key={i} className="flex items-center gap-3">
+              {file.type && file.type.startsWith('image') ? (
+                <img
+                  src={file.url}
+                  alt={file.filename}
+                  className="max-h-32 max-w-xs rounded border"
+                  style={{ objectFit: 'cover' }}
+                />
+              ) : (
+                <span className="inline-block w-8 h-8 bg-gray-200 rounded flex items-center justify-center text-gray-500">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </span>
+              )}
+              <a 
+                href={file.url} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-blue-600 underline text-sm" 
+                download
+              >
+                {file.filename}
+              </a>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export default function TicketDetails({ editModeFromRoute }) {
+  // --- React hooks and state ---
+  const params = useParams();
+  const navigate = useNavigate();
+  const ticketId = params.ticketId;
+  const customerSlug = params.customerId;
+  
+  // Zustand store values
+  const tickets = useAppStore(s => s.tickets);
+  const customers = useAppStore(s => s.customers);
+  const setTickets = useAppStore(s => s.setTickets);
+  const setGroupColorForTickets = useAppStore(s => s.setGroupColorForTickets);
+  const removeKanbanTicket = useAppStore(s => s.removeKanbanTicket);
+  
+  // Find ticket and customer
+  const ticket = tickets.find(t => String(t.id) === String(ticketId));
+  const rmaNumber = ticket?.rmaNumber;
+  let fallbackCustomer = null;
+  
+  if (ticket) {
+    fallbackCustomer = customers.find(c => c.id === ticket.customerId);
+  } else if (customerSlug) {
+    fallbackCustomer = customers.find(c => c.slug === customerSlug);
+  }
+  
+  // UI state
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [pendingGroupColor, setPendingGroupColor] = useState('#6B7280'); // Default color (gray-500)
+  const [showRelatedSearch, setShowRelatedSearch] = useState(false);
+  const [relatedSearch, setRelatedSearch] = useState("");
+  const [relatedSearchResults, setRelatedSearchResults] = useState([]);
+  const [editMode, setEditMode] = useState(!!editModeFromRoute);
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState("");
+  
+  // Form data state
+  const [relatedTickets, setRelatedTickets] = useState(ticket?.relatedTickets || []);
+  const [externalLinks, setExternalLinks] = useState(ticket?.externalLinks || []);
+  const [form, setForm] = useState(ticket ? { ...ticket } : {});
+  
+  const lastTicketIdRef = useRef(ticket?.id);
+  const userIsAdmin = true; // Placeholder for role-based access
+  const isNewTicket = !ticket && editMode;
+  
+  useEffect(() => {
+    setRelatedTickets(ticket?.relatedTickets || []);
+    setExternalLinks(ticket?.externalLinks || []);
+  }, [ticket]);
+
+  // --- Helper functions ---
+
+  // Helper: filter tickets for search (exclude current, already related, and empty search)
+  function getRelatedSearchResults() {
+    if (!relatedSearch.trim()) return [];
+    const s = relatedSearch.trim().toLowerCase();
+    return tickets.filter(t =>
+      t.id !== ticket?.id &&
+      !relatedTickets.some(rel => rel.id === t.id || rel === t.id) &&
+      (
+        (t.id && String(t.id).toLowerCase().includes(s)) ||
+        (t.rmaNumber && String(t.rmaNumber).toLowerCase().includes(s)) ||
+        (t.rma && String(t.rma).toLowerCase().includes(s)) ||
+        (t.item && String(t.item).toLowerCase().includes(s)) ||
+        (t.customerId && customers.find(c => c.id === t.customerId && ((c.companyName||c.businessName||c.contactName||"").toLowerCase().includes(s))))
+      )
+    );
+  }
+
+  // --- Relationship handlers ---
+  function handleAddRelatedTicket() {
+    setShowRelatedSearch(true);
+    setRelatedSearch("");
+    setRelatedSearchResults([]);
+  }
+
+  // Handler for selecting a related ticket from the search modal
+  function handleSelectRelatedTicket(t) {
+    if (relatedTickets.some(rel => rel.id === t.id || rel === t.id)) return;
+    // Add the new related ticket
+    const newRelated = [...relatedTickets, { id: t.id, type: 'related', note: '' }];
+    setRelatedTickets(newRelated);
+    setShowRelatedSearch(false);
+    setRelatedSearch("");
+    setRelatedSearchResults([]);
+    
+    // Check if this forms a new group (no groupColor set for any involved ticket)
+    // Always include current ticket if possible, fallback to just related
+    const currentId = ticket && ticket.id ? ticket.id : null;
+    const groupIds = currentId ? [currentId, t.id, ...newRelated.map(rel => rel.id)] : [t.id, ...newRelated.map(rel => rel.id)];
+    const groupTickets = tickets.filter(tk => groupIds.includes(tk.id));
+    const hasColor = groupTickets.some(tk => tk.groupColor);
+    
+    if (!hasColor) {
+      setPendingGroupColor('#6B7280'); // Reset to default color each time
+      setShowColorPicker(true);
+    }
+  }
+
+  // Handler for updating a related ticket's type or note
+  function handleUpdateRelatedTicket(idx, field, value) {
+    setRelatedTickets(relatedTickets => {
+      const updated = [...relatedTickets];
+      updated[idx] = { ...updated[idx], [field]: value };
+      return updated;
+    });
+  }
+
+  // Handler for removing a related ticket
+  function handleRemoveRelatedTicket(idx) {
+    setRelatedTickets(relatedTickets => relatedTickets.filter((_, i) => i !== idx));
+  }
+
+  function handleAddExternalLink() {
+    setExternalLinks([...externalLinks, { url: '', label: '' }]);
+  }
+
+  // --- Submit handler for edit form ---
+  function handleDynamicFormSubmit(formValues, customFields) {
+    // Merge all fields, including relationships and custom fields
+    const mergedCustomFields = {
+      ...(ticket?.customFields || {}),
+      ...(formValues.customFields || {}),
+      ...(customFields || {})
+    };
+    
+    // Validation: Prevent blank tickets
+    const requiredFields = ['item', 'reason'];
+    const missingFields = requiredFields.filter(f => {
+      const v = formValues[f];
+      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+    });
+    
+    // Debug log for field values
+    if (!ticket) {
+      if (missingFields.length > 0) {
+        setError('Please fill out all required fields before submitting.');
+        return;
+      }
+    }
+    
+    // Assign group color if picked and there are related tickets
+    if (pendingGroupColor && relatedTickets.length > 0) {
+      const groupIds = [ticket?.id, ...relatedTickets.map(rel => rel.id)].filter(Boolean);
+      setGroupColorForTickets(groupIds, pendingGroupColor);
+    }
+    
+    if (ticket) {
+      // Editing existing ticket
+      const updatedTicket = {
+        ...ticket,
+        ...formValues,
+        customFields: mergedCustomFields,
+        relatedTickets,
+        externalLinks,
+      };
+      setTickets(tickets.map(t => t.id === ticket.id ? updatedTicket : t));
+      
+      // Sync to kanban board state
+      const updateKanbanTicket = useAppStore.getState().updateKanbanTicket;
+      if (typeof updateKanbanTicket === 'function') {
+        updateKanbanTicket(updatedTicket);
+      }
+      
+      setMsg('Ticket updated.');
+    } else {
+      // Creating new ticket: assign RMA number and ID here
+      // Ensure customerId is set from context if not present in formValues
+      let customerId = formValues.customerId;
+      if (!customerId) {
+        customerId = fallbackCustomer?.id;
+      }
+      
+      const newTicket = {
+        id: nanoid(),
+        rmaNumber: formValues.rmaNumber || nanoid(8),
+        ...formValues,
+        customerId,
+        customFields: mergedCustomFields,
+        relatedTickets,
+        externalLinks,
+        createdAt: new Date().toISOString(),
+        status: 'New',
+        activity: [],
+      };
+      
+      setTickets([...tickets, newTicket]);
+      
+      // Sync to kanban board state
+      const addKanbanTicket = useAppStore.getState().addKanbanTicket;
+      if (typeof addKanbanTicket === 'function') {
+        addKanbanTicket(newTicket);
+      }
+      
+      setMsg('Ticket created.');
+      
+      // Navigate to the new ticket's details view
+      if (customerId) {
+        navigate(`/customers/${fallbackCustomer?.slug || customerId}/tickets/${newTicket.id}`);
+      } else {
+        navigate(`/tickets/${newTicket.id}`);
+      }
+    }
+    
+    setEditMode(false);
+  }
+  
+  // Custom fields schema example
+  const customFieldsSchema = [
+    { name: 'serialNumber', label: 'Serial Number', type: 'text', required: false, order: 3.5 },
+    { name: 'test', label: 'Test', type: 'text', required: false, order: 4 },
+  ];
+  
+  // --- Relationship handlers ---
+  function handleAddRelatedTicket() {
+    setShowRelatedSearch(true);
+    setRelatedSearch("");
+    setRelatedSearchResults([]);
+  }
+
+  function handleSelectRelatedTicket(t) {
+    if (relatedTickets.some(rel => rel.id === t.id || rel === t.id)) return;
+    
+    // Add the new related ticket
+    const newRelated = [...relatedTickets, { id: t.id, type: 'related', note: '' }];
+    setRelatedTickets(newRelated);
+    setShowRelatedSearch(false);
+    setRelatedSearch("");
+    setRelatedSearchResults([]);
+    
+    // Check if this forms a new group (no groupColor set for any involved ticket)
+    const currentId = ticket && ticket.id ? ticket.id : null;
+    const groupIds = currentId 
+      ? [currentId, t.id, ...newRelated.map(rel => rel.id)] 
+      : [t.id, ...newRelated.map(rel => rel.id)];
+      
+    const groupTickets = tickets.filter(tk => groupIds.includes(tk.id));
+    const hasColor = groupTickets.some(tk => tk.groupColor);
+    
+    if (!hasColor) {
+      setPendingGroupColor('#6B7280'); // Reset to default color
+      setShowColorPicker(true);
+    }
+  }
+
+  function handleUpdateRelatedTicket(idx, field, value) {
+    setRelatedTickets(relatedTickets => {
+      const updated = [...relatedTickets];
+      updated[idx] = { ...updated[idx], [field]: value };
+      return updated;
+    });
+  }
+
+  function handleRemoveRelatedTicket(idx) {
+    setRelatedTickets(relatedTickets => relatedTickets.filter((_, i) => i !== idx));
+  }
+  
+  function handleAddExternalLink() {
+    setExternalLinks([...externalLinks, { url: '', label: '' }]);
+  }
+
+  // --- Form submission handler ---
+  function handleDynamicFormSubmit(formValues, customFields) {
+    // Merge all fields, including relationships and custom fields
+    const mergedCustomFields = {
+      ...(ticket?.customFields || {}),
+      ...(formValues.customFields || {}),
+      ...(customFields || {})
+    };
+    
+    // Validation: Prevent blank tickets
+    const requiredFields = ['item', 'reason'];
+    const missingFields = requiredFields.filter(f => {
+      const v = formValues[f];
+      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+    });
+    
+    // Validation for new tickets
+    if (!ticket) {
+      if (missingFields.length > 0) {
+        setError('Please fill out all required fields before submitting.');
+        return;
+      }
+    }
+    
+    // Apply group color if set
+    if (pendingGroupColor && relatedTickets.length > 0) {
+      const groupIds = [ticket?.id, ...relatedTickets.map(rel => rel.id)].filter(Boolean);
+      setGroupColorForTickets(groupIds, pendingGroupColor);
+    }
+    
+    if (ticket) {
+      // Editing existing ticket
+      const updatedTicket = {
+        ...ticket,
+        ...formValues,
+        customFields: mergedCustomFields,
+        relatedTickets,
+        externalLinks,
+      };
+      
+      setTickets(tickets.map(t => t.id === ticket.id ? updatedTicket : t));
+      
+      // Sync to kanban board state
+      const updateKanbanTicket = useAppStore.getState().updateKanbanTicket;
+      if (typeof updateKanbanTicket === 'function') {
+        updateKanbanTicket(updatedTicket);
+      }
+      
+      setMsg('Ticket updated.');
+    } else {
+      // Creating new ticket
+      let customerId = formValues.customerId;
+      if (!customerId) {
+        customerId = fallbackCustomer?.id;
+      }
+      
+      const newTicket = {
+        id: nanoid(),
+        rmaNumber: formValues.rmaNumber || nanoid(8),
+        ...formValues,
+        customerId,
+        customFields: mergedCustomFields,
+        relatedTickets,
+        externalLinks,
+        createdAt: new Date().toISOString(),
+        status: 'New',
+        activity: [],
+      };
+      
+      setTickets([...tickets, newTicket]);
+      
+      // Sync to kanban board state
+      const addKanbanTicket = useAppStore.getState().addKanbanTicket;
+      if (typeof addKanbanTicket === 'function') {
+        addKanbanTicket(newTicket);
+      }
+      
+      setMsg('Ticket created.');
+      
+      // Navigate to the new ticket's details view
+      if (customerId) {
+        navigate(`/customers/${fallbackCustomer?.slug || customerId}/tickets/${newTicket.id}`);
+      } else {
+        navigate(`/tickets/${newTicket.id}`);
+      }
+    }
+    
+    setEditMode(false);
+  }
+
+  // --- Helper functions ---
+  function getRelatedSearchResults() {
+    if (!relatedSearch.trim()) return [];
+    
+    const s = relatedSearch.trim().toLowerCase();
+    return tickets.filter(t =>
+      t.id !== ticket?.id &&
+      !relatedTickets.some(rel => rel.id === t.id || rel === t.id) &&
+      (
+        (t.id && String(t.id).toLowerCase().includes(s)) ||
+        (t.rmaNumber && String(t.rmaNumber).toLowerCase().includes(s)) ||
+        (t.rma && String(t.rma).toLowerCase().includes(s)) ||
+        (t.item && String(t.item).toLowerCase().includes(s)) ||
+        (t.customerId && customers.find(c => c.id === t.customerId && 
+          ((c.companyName || c.businessName || c.contactName || "").toLowerCase().includes(s))
+        ))
+      )
+    );
+  }
+
+  // --- Render color picker modal ---
+  const colorPickerModal = showColorPicker ? (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+      <div className="bg-white rounded-lg shadow-lg p-6 flex flex-col items-center">
+        <div className="font-bold mb-2 text-lg">Choose Group Color</div>
+        <SketchPicker
+          color={pendingGroupColor}
+          onChangeComplete={color => setPendingGroupColor(color.hex)}
+          presetColors={["#EF4444", "#F59E42", "#FACC15", "#22C55E", "#3B82F6", "#6366F1", "#6B7280", "#D946EF"]}
+        />
+        <div className="flex gap-4 mt-4">
+          <button
+            className="px-4 py-2 bg-blue-600 text-white rounded"
+            onClick={() => {
+              const groupIds = [ticket?.id, ...relatedTickets.map(rel => rel.id)].filter(Boolean);
+              setGroupColorForTickets(groupIds, pendingGroupColor);
+              setShowColorPicker(false);
+            }}
+          >Set Color</button>
+          <button
+            className="px-4 py-2 bg-gray-300 text-gray-700 rounded"
+            onClick={() => setShowColorPicker(false)}
+          >Cancel</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  // --- Render UI based on mode ---
+  if (editMode) {
+    return (
+      <>
+        {colorPickerModal}
+        <div className="max-w-3xl mx-auto p-4">
+          <div className="bg-white p-4 rounded shadow">
+            {/* Header with RMA number and actions */}
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h1 className="text-xl font-bold text-gray-800">
+                  {isNewTicket ? 'Create New Ticket' : `Edit RMA #${rmaNumber || ''}`}
+                </h1>
+                {ticket && (
+                  <div className="text-sm text-gray-500">
+                    ID: {ticket.id}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className="px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                  onClick={() => setEditMode(false)}
+                >
+                  Cancel
+                </button>
+                {ticket && userIsAdmin && (
+                  <button
+                    className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Status message display */}
+            {msg && (
+              <div className="mb-4 p-3 bg-green-100 text-green-700 rounded">{msg}</div>
+            )}
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">{error}</div>
+            )}
+
+            {/* Delete confirmation modal */}
+            {showDeleteConfirm && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+                <div className="bg-white p-6 rounded shadow-lg max-w-md w-full">
+                  <div className="font-bold mb-4 text-lg text-red-600">Confirm Delete</div>
+                  <p className="mb-6">
+                    Are you sure you want to delete this ticket? This action cannot be undone.
+                  </p>
+                  {deleteMsg && <div className="mb-4 p-2 bg-red-100 text-red-700 rounded text-sm">{deleteMsg}</div>}
+                  <div className="flex justify-end gap-3">
+                    <button
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                      onClick={() => {
+                        setShowDeleteConfirm(false);
+                        setDeleteMsg("");
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                      onClick={() => {
+                        if (!ticket) {
+                          setDeleteMsg("Error: Cannot delete a ticket that doesn't exist.");
+                          return;
+                        }
+                        // Remove from tickets list
+                        setTickets(tickets.filter(t => t.id !== ticket.id));
+                        // Remove from kanban board if it exists
+                        if (typeof removeKanbanTicket === 'function') {
+                          removeKanbanTicket(ticket.id);
+                        }
+                        // Navigate back
+                        if (fallbackCustomer?.slug) {
+                          navigate(`/customers/${fallbackCustomer.slug}`);
+                        } else if (fallbackCustomer?.id) {
+                          navigate(`/customers/${fallbackCustomer.id}`);
+                        } else {
+                          navigate('/tickets');
+                        }
+                      }}
+                    >
+                      Delete Ticket
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* Related Tickets Edit UI */}
+            <div className="mb-4 p-3 rounded bg-blue-50 border border-blue-200">
+              <div className="font-bold mb-2 text-sm uppercase tracking-wide text-blue-700">Related Tickets</div>
+              
+              {/* Outgoing (editable) relationships */}
+              {relatedTickets.map((rel, idx) => {
+                const relTicket = tickets.find(t => t.id === rel.id);
+                return (
+                  <div key={idx} className="flex gap-2 mb-2 items-center">
+                    <span className="text-gray-700">
+                      {relTicket ? `RMA #${relTicket.rmaNumber || relTicket.rma || relTicket.id}` : rel.id}
+                    </span>
+                    <select
+                      className="border px-2 py-1 rounded"
+                      value={rel.type}
+                      onChange={e => handleUpdateRelatedTicket(idx, 'type', e.target.value)}
+                    >
+                      <option value="related">Related</option>
+                      <option value="parent">Parent</option>
+                      <option value="child">Child</option>
+                    </select>
+                    <input
+                      className="border px-2 py-1 rounded w-32"
+                      placeholder="Note"
+                      value={rel.note}
+                      onChange={e => handleUpdateRelatedTicket(idx, 'note', e.target.value)}
+                    />
+                    <button 
+                      className="text-red-600" 
+                      onClick={() => handleRemoveRelatedTicket(idx)} 
+                      title="Remove"
+                    >✕</button>
+                  </div>
+                );
+              })}
+
+              {/* Incoming (non-editable) relationships */}
+              {(() => {
+                // Find incoming relationships (other tickets that reference this one, but not already in outgoing list)
+                const incoming = [];
+                for (const t of tickets) {
+                  if (!Array.isArray(t.relatedTickets)) continue;
+                  
+                  for (const rel of t.relatedTickets) {
+                    const relId = rel?.id || rel;
+                    const relType = rel?.type || 'related';
+                    const relNote = rel?.note;
+                    
+                    // Guard: Only check incoming relationships if ticket exists
+                    if (ticket && String(relId) === String(ticket.id)) {
+                      // Only show if not already in outgoing list
+                      if (!relatedTickets.some(r => String(r.id) === String(t.id))) {
+                        // Infer the inverse relationship type
+                        let inferredType = relType;
+                        if (relType === 'parent') inferredType = 'child';
+                        else if (relType === 'child') inferredType = 'parent';
+                        else inferredType = relType;
+                        
+                        incoming.push({
+                          id: t.id,
+                          type: inferredType,
+                          note: relNote,
+                          rma: t.rmaNumber || t.rma || t.id,
+                        });
+                      }
+                    }
+                  }
+                }
+                
+                if (incoming.length === 0) return null;
+                
+                return (
+                  <div className="mt-2">
+                    {incoming.map((rel, idx) => (
+                      <div key={rel.id + '-' + idx} className="flex gap-2 mb-2 items-center opacity-60">
+                        <span className="text-gray-700">{`RMA #${rel.rma}`}</span>
+                        <span className="text-xs px-2 py-1 bg-gray-200 rounded">Incoming</span>
+                        <span className="text-xs text-gray-500">({rel.type})</span>
+                        {rel.note && <span className="text-gray-600 italic ml-2">({rel.note})</span>}
+                        <a
+                          className="text-blue-600 underline text-xs ml-2"
+                          href="#"
+                          onClick={e => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            navigate(`/tickets/${rel.id}?edit=1`);
+                          }}
+                          title="Edit this relationship on the other ticket"
+                        >Edit on {rel.rma}</a>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              <button 
+                className="text-blue-600 underline text-sm" 
+                onClick={handleAddRelatedTicket}
+              >+ Add Related Ticket</button>
+
+              {/* Modal for searching tickets to relate */}
+              {showRelatedSearch && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
+                  <div className="bg-white p-6 rounded shadow-lg max-w-lg w-full">
+                    <div className="font-bold mb-2 text-blue-700">Search Tickets to Relate</div>
+                    <input
+                      className="border px-2 py-1 rounded w-full mb-2"
+                      placeholder="Search by RMA, company, or ticket ID..."
+                      autoFocus
+                      value={relatedSearch}
+                      onChange={e => {
+                        setRelatedSearch(e.target.value);
+                        setRelatedSearchResults(getRelatedSearchResults());
+                      }}
+                    />
+                    <div className="max-h-60 overflow-y-auto">
+                      {getRelatedSearchResults().length === 0 ? (
+                        <div className="text-gray-500">No tickets found.</div>
+                      ) : (
+                        <div className="divide-y divide-gray-100">
+                          <div className="flex items-center py-1 text-xs font-semibold text-gray-500 select-none">
+                            <span className="w-32">RMA</span>
+                            <span className="w-32">Type</span>
+                            <span className="w-32">Customer</span>
+                            <span className="w-32">Item</span>
+                          </div>
+                          {getRelatedSearchResults().map(t => {
+                            const customer = customers.find(c => c.id === t.customerId);
+                            return (
+                              <div 
+                                key={t.id} 
+                                className="flex items-center py-1 cursor-pointer hover:bg-blue-100" 
+                                onClick={() => handleSelectRelatedTicket(t)}
+                              >
+                                <span className="w-32">{t.rmaNumber || t.rma || t.id}</span>
+                                <span className="w-32">{t.type || ''}</span>
+                                <span className="w-32">
+                                  {customer ? (customer.companyName || customer.businessName || customer.contactName || customer.id) : t.customerId}
+                                </span>
+                                <span className="w-32">{t.item || ''}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    <button 
+                      className="mt-4 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300" 
+                      onClick={() => setShowRelatedSearch(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Main form */}
+            <DynamicForm
+              schema={getTicketFormSchema({
+                isCreate: isNewTicket,
+                existingTicket: ticket,
+                customers,
+                customerId: ticket?.customerId || fallbackCustomer?.id,
+                fallbackCustomer,
+                customFields: customFieldsSchema || []
+              })}
+              fieldGroups={ticketFieldGroups}
+              initialValues={{
+                ...(ticket || {}),
+                customerId: ticket?.customerId || fallbackCustomer?.id,
+              }}
+              onSubmit={handleDynamicFormSubmit}
+              submitLabel={isNewTicket ? "Create Ticket" : "Update Ticket"}
+              customSections={[
+                {
+                  id: 'relationships',
+                  title: 'Related Tickets',
+                  order: 25,
+                  render: () => (
+                    <>
+                      {/* --- Related Tickets Edit (with incoming indicator) --- */}
+                      <div className="mb-4 p-3 rounded bg-blue-50 border border-blue-200">
+                        <div className="font-bold mb-2 text-sm uppercase tracking-wide text-blue-700">Related Tickets</div>
+                        
+                        {/* Outgoing (editable) relationships */}
+                        {relatedTickets.map((rel, idx) => {
+                          const relTicket = tickets.find(t => t.id === rel.id);
+                          return (
+                            <div key={idx} className="flex gap-2 mb-2 items-center">
+                              <span className="text-gray-700">{relTicket ? `RMA #${relTicket.rmaNumber || relTicket.rma || relTicket.id}` : rel.id}</span>
+                              <select
+                                className="border px-2 py-1 rounded"
+                                value={rel.type}
+                                onChange={e => handleUpdateRelatedTicket(idx, 'type', e.target.value)}
+                              >
+                                <option value="related">Related</option>
+                                <option value="parent">Parent</option>
+                                <option value="child">Child</option>
+                              </select>
+                              <input
+                                className="border px-2 py-1 rounded w-32"
+                                placeholder="Note"
+                                value={rel.note}
+                                onChange={e => handleUpdateRelatedTicket(idx, 'note', e.target.value)}
+                              />
+                              <button className="text-red-600" onClick={() => handleRemoveRelatedTicket(idx)} title="Remove">✕</button>
+                            </div>
+                          );
+                        })}
+                        
+                        {/* Incoming (non-editable) relationships */}
+                        {(() => {
+                          // Find incoming relationships (other tickets that reference this one, but not already in outgoing list)
+                          const incoming = [];
+                          for (const t of tickets) {
+                            if (!Array.isArray(t.relatedTickets)) continue;
+                            for (const rel of t.relatedTickets) {
+                              const relId = rel?.id || rel;
+                              const relType = rel?.type || 'related';
+                              const relNote = rel?.note;
+                              // Guard: Only check incoming relationships if ticket exists
+                              if (ticket && String(relId) === String(ticket.id)) {
+                                // Only show if not already in outgoing list
+                                if (!relatedTickets.some(r => String(r.id) === String(t.id))) {
+                                  // Infer the inverse relationship type
+                                  let inferredType = relType;
+                                  if (relType === 'parent') inferredType = 'child';
+                                  else if (relType === 'child') inferredType = 'parent';
+                                  else inferredType = relType;
+                                  incoming.push({
+                                    id: t.id,
+                                    type: inferredType,
+                                    note: relNote,
+                                    rma: t.rmaNumber || t.rma || t.id,
+                                  });
+                                }
+                              }
+                            }
+                          }
+                          if (incoming.length === 0) return null;
+                          return (
+                            <div className="mt-2">
+                              {incoming.map((rel, idx) => (
+                                <div key={rel.id + '-' + idx} className="flex gap-2 mb-2 items-center opacity-60">
+                                  <span className="text-gray-700">{`RMA #${rel.rma}`}</span>
+                                  <span className="text-xs px-2 py-1 bg-gray-200 rounded">Incoming</span>
+                                  <span className="text-xs text-gray-500">({rel.type})</span>
+                                  {rel.note && <span className="text-gray-600 italic ml-2">({rel.note})</span>}
+                                  <a
+                                    className="text-blue-600 underline text-xs ml-2"
+                                    href="#"
+                                    onClick={e => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      navigate(`/tickets/${rel.id}?edit=1`);
+                                    }}
+                                    title="Edit this relationship on the other ticket"
+                                  >Edit on {rel.rma}</a>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                        
+                        <button className="text-blue-600 underline text-sm" onClick={handleAddRelatedTicket}>+ Add Related Ticket</button>
+                        
+                        {/* Modal for searching tickets to relate */}
+                        {showRelatedSearch && (
+                          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
+                            <div className="bg-white p-6 rounded shadow-lg max-w-lg w-full">
+                              <div className="font-bold mb-2 text-blue-700">Search Tickets to Relate</div>
+                              <input
+                                className="border px-2 py-1 rounded w-full mb-2"
+                                placeholder="Search by RMA, company, or ticket ID..."
+                                autoFocus
+                                value={relatedSearch}
+                                onChange={e => {
+                                  setRelatedSearch(e.target.value);
+                                  setRelatedSearchResults(getRelatedSearchResults());
+                                }}
+                              />
+                              <div className="max-h-60 overflow-y-auto">
+                                {getRelatedSearchResults().length === 0 ? (
+                                  <div className="text-gray-500">No tickets found.</div>
+                                ) : (
+                                  <div className="divide-y divide-gray-100">
+                                    {/* Header row for alignment */}
+                                    <div className="flex items-center py-1 text-xs font-semibold text-gray-500 select-none">
+                                      <span className="w-32">RMA</span>
+                                      <span className="w-32">Type</span>
+                                      <span className="w-32">Customer</span>
+                                      <span className="w-32">Item</span>
+                                    </div>
+                                    {getRelatedSearchResults().map(t => {
+                                      const customer = customers.find(c => c.id === t.customerId);
+                                      return (
+                                        <div key={t.id} className="flex items-center py-1 cursor-pointer hover:bg-blue-100" onClick={() => handleSelectRelatedTicket(t)}>
+                                          <span className="w-32">{t.rmaNumber || t.rma || t.id}</span>
+                                          <span className="w-32">{t.type || ''}</span>
+                                          <span className="w-32">{customer ? (customer.companyName || customer.businessName || customer.contactName || customer.id) : t.customerId}</span>
+                                          <span className="w-32">{t.item || ''}</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                              <button className="mt-4 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300" onClick={() => setShowRelatedSearch(false)}>Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )
+                },
+                {
+                  id: 'externalLinks',
+                  title: 'External Links',
+                  order: 30,
+                  render: () => (
+                    <>
+                      {/* External Links Section */}
+                      <div className="mb-4 p-3 rounded bg-blue-50 border border-blue-200">
+                        <div className="font-bold mb-2 text-sm uppercase tracking-wide text-blue-700">External Links</div>
+                        {externalLinks.map((link, idx) => (
+                          <div key={idx} className="flex gap-2 mb-2 items-center">
+                            <input
+                              className="border px-2 py-1 rounded flex-grow"
+                              placeholder="URL (https://...)"
+                              value={link.url}
+                              onChange={e => {
+                                const updated = [...externalLinks];
+                                updated[idx] = { ...updated[idx], url: e.target.value };
+                                setExternalLinks(updated);
+                              }}
+                            />
+                            <input
+                              className="border px-2 py-1 rounded w-32"
+                              placeholder="Label (optional)"
+                              value={link.label}
+                              onChange={e => {
+                                const updated = [...externalLinks];
+                                updated[idx] = { ...updated[idx], label: e.target.value };
+                                setExternalLinks(updated);
+                              }}
+                            />
+                            <button
+                              className="text-red-600"
+                              onClick={() => {
+                                setExternalLinks(externalLinks.filter((_, i) => i !== idx));
+                              }}
+                              title="Remove"
+                            >✕</button>
+                          </div>
+                        ))}
+                        <button className="text-blue-600 underline text-sm" onClick={handleAddExternalLink}>+ Add External Link</button>
+                      </div>
+                    </>
+                  )
+                }
+              ]}
+            />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // --- Non-edit mode (details view) ---
+  return (
+    <div className="max-w-3xl mx-auto p-4">
+      <div className="bg-white p-4 rounded shadow">
+        {colorPickerModal}
+        
+        {/* Header with RMA number and status */}
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">
+              {ticket ? `RMA #${ticket.rmaNumber || ''}` : 'Ticket Details'}
+            </h1>
+            {ticket?.createdAt && (
+              <div className="text-sm text-gray-500">
+                Created: {new Date(ticket.createdAt).toLocaleDateString()}
+              </div>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {ticket?.status && (
+              <span className={`px-3 py-1 rounded-full text-sm font-medium
+                ${ticket.status === 'New' ? 'bg-blue-100 text-blue-800' : 
+                  ticket.status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
+                  ticket.status === 'Complete' ? 'bg-green-100 text-green-800' :
+                  'bg-gray-100 text-gray-800'}`}>
+                {ticket.status}
+              </span>
+            )}
+            <button 
+              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+              onClick={() => setEditMode(true)}
+            >
+              Edit
+            </button>
+          </div>
+        </div>
+        
+        {/* Main ticket information */}
+        {ticket && (
+          <>
+            {/* Basic information */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div>
+                <div className="font-semibold text-gray-700">Item:</div>
+                <div className="text-gray-900">{ticket.item || 'Not specified'}</div>
+              </div>
+              <div>
+                <div className="font-semibold text-gray-700">Reason:</div>
+                <div className="text-gray-900">{ticket.reason || 'Not specified'}</div>
+              </div>
+              <div>
+                <div className="font-semibold text-gray-700">Customer:</div>
+                <div className="text-gray-900">
+                  {fallbackCustomer ? 
+                    (fallbackCustomer.companyName || fallbackCustomer.businessName || fallbackCustomer.contactName || ticket.customerId) : 
+                    ticket.customerId || 'Not specified'}
+                </div>
+              </div>
+              <div>
+                <div className="font-semibold text-gray-700">Type:</div>
+                <div className="text-gray-900">{ticket.type || 'Not specified'}</div>
+              </div>
+            </div>
+            
+            {/* Description */}
+            {ticket.description && (
+              <div className="mb-6">
+                <div className="font-semibold text-gray-700 mb-2">Description:</div>
+                <div className="text-gray-900 bg-gray-50 p-3 rounded">{ticket.description}</div>
+              </div>
+            )}
+            
+            {/* Custom fields */}
+            {ticket.customFields && Object.keys(ticket.customFields).length > 0 && (
+              <div className="mb-6">
+                <div className="font-semibold text-gray-700 mb-2">Additional Details:</div>
+                <div className="grid grid-cols-2 gap-4">
+                  {Object.entries(ticket.customFields).map(([key, value]) => (
+                    <div key={key}>
+                      <div className="font-medium text-gray-600">{key}:</div>
+                      <div className="text-gray-900">{value || 'Not specified'}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Related tickets section */}
+            {(relatedTickets.length > 0 || (() => {
+              const incoming = [];
+              for (const t of tickets) {
+                if (!Array.isArray(t.relatedTickets)) continue;
+                for (const rel of t.relatedTickets) {
+                  const relId = rel?.id || rel;
+                  if (ticket && String(relId) === String(ticket.id)) {
+                    if (!relatedTickets.some(r => String(r.id) === String(t.id))) {
+                      incoming.push(t);
+                    }
+                  }
+                }
+              }
+              return incoming.length > 0;
+            })()) && (
+              <div className="mb-6">
+                <div className="font-semibold text-gray-700 mb-2">Related Tickets:</div>
+                <div className="flex flex-col gap-2">
+                  {/* Outgoing relationships */}
+                  {relatedTickets.map((rel, idx) => {
+                    const relTicket = tickets.find(t => t.id === rel.id);
+                    if (!relTicket) return null;
+                    
+                    return (
+                      <div key={idx} className="flex items-center gap-2 p-2 rounded bg-gray-50 hover:bg-gray-100">
+                        <span className="font-medium text-gray-800">
+                          RMA #{relTicket.rmaNumber || relTicket.rma || relTicket.id}
+                        </span>
+                        <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">{rel.type}</span>
+                        {rel.note && <span className="text-gray-600 italic ml-2">({rel.note})</span>}
+                        <button 
+                          className="ml-auto text-blue-600 hover:underline"
+                          onClick={() => navigate(`/tickets/${relTicket.id}`)}
+                        >
+                          View
+                        </button>
+                      </div>
+                    );
+                  })}
+                  
+                  {/* Incoming relationships */}
+                  {(() => {
+                    const incoming = [];
+                    for (const t of tickets) {
+                      if (!Array.isArray(t.relatedTickets)) continue;
+                      for (const rel of t.relatedTickets) {
+                        const relId = rel?.id || rel;
+                        const relType = rel?.type || 'related';
+                        const relNote = rel?.note;
+                        if (ticket && String(relId) === String(ticket.id)) {
+                          if (!relatedTickets.some(r => String(r.id) === String(t.id))) {
+                            let inferredType = relType;
+                            if (relType === 'parent') inferredType = 'child';
+                            else if (relType === 'child') inferredType = 'parent';
+                            else inferredType = relType;
+                            
+                            incoming.push({
+                              ticket: t,
+                              type: inferredType,
+                              note: relNote
+                            });
+                          }
+                        }
+                      }
+                    }
+                    
+                    if (incoming.length === 0) return null;
+                    
+                    return (
+                      <div className="mt-2">
+                        {incoming.map((item, idx) => (
+                          <div key={idx} className="flex items-center gap-2 p-2 rounded bg-gray-50 hover:bg-gray-100">
+                            <span className="font-medium text-gray-800">
+                              RMA #{item.ticket.rmaNumber || item.ticket.rma || item.ticket.id}
+                            </span>
+                            <span className="text-xs px-2 py-1 bg-gray-200 text-gray-800 rounded">{item.type}</span>
+                            <span className="text-xs px-2 py-1 bg-gray-200 rounded">Incoming</span>
+                            {item.note && <span className="text-gray-600 italic ml-2">({item.note})</span>}
+                            <button 
+                              className="ml-auto text-blue-600 hover:underline"
+                              onClick={() => navigate(`/tickets/${item.ticket.id}`)}
+                            >
+                              View
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+            
+            {/* External links */}
+            {ticket.externalLinks && ticket.externalLinks.length > 0 && (
+              <div className="mb-6">
+                <div className="font-semibold text-gray-700 mb-2">External Links:</div>
+                <div className="flex flex-col gap-2">
+                  {ticket.externalLinks.map((link, idx) => (
+                    <a 
+                      key={idx}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline flex items-center gap-2"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                      {link.label || link.url}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Attachments */}
+            {ticket.attachments && ticket.attachments.length > 0 && renderAttachments(ticket.attachments)}
+            
+            {/* Activity feed */}
+            {ticket.activity && ticket.activity.length > 0 && (
+              <div className="mt-8">
+                <div className="font-semibold text-gray-700 mb-4">Activity History:</div>
+                <ActivityFeed activity={ticket.activity} />
+              </div>
+            )}
+          </>
+        )}
+        
+        {/* Show message if no ticket found */}
+        {!ticket && !isNewTicket && (
+          <div className="text-center py-8">
+            <div className="text-red-600 mb-2">Ticket not found</div>
+            <p className="text-gray-500">The requested ticket could not be found.</p>
+          </div>
+        )}
+        
+        {/* Error message display */}
+        {error && (
+          <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">
+            {error}
+          </div>
+        )}
+        
+        {/* Success message display */}
+        {msg && (
+          <div className="mt-4 p-3 bg-green-100 text-green-700 rounded">
+            {msg}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

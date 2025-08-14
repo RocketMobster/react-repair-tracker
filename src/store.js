@@ -144,6 +144,7 @@ export const useAppStore = create(
           customFields: typeof ticket.customFields === 'object' && ticket.customFields !== null ? ticket.customFields : {},
           relatedTickets: Array.isArray(ticket.relatedTickets) ? ticket.relatedTickets : [],
           externalLinks: Array.isArray(ticket.externalLinks) ? ticket.externalLinks : [],
+            groupColor: ticket.groupColor || null, // New property for group color
         };
         kanban.tickets[ticket.id] = ticketWithActivity;
         // Also add to main tickets array if not present
@@ -165,6 +166,84 @@ export const useAppStore = create(
         defaultCol.ticketIds.push(ticket.id);
         return { kanban, tickets: ticketsArr };
       }),
+      /**
+       * Assigns a group color to all tickets in a relationship group.
+       * @param {string[]} ticketIds - Array of ticket IDs in the group
+       * @param {string} color - The color to assign
+       * @param {string} groupId - Optional group identifier (defaults to a hash of the sorted ticket IDs)
+       */
+      setGroupColorForTickets: (ticketIds, color, groupId = null) => set((state) => {
+        // If no groupId provided, create a stable ID based on the ticket IDs
+        // This ensures the same set of tickets always gets the same group ID
+        if (!groupId) {
+          // Sort ticket IDs to ensure stable groupId regardless of order
+          const sortedIds = [...ticketIds].sort();
+          groupId = `group-${sortedIds.join('-')}`;
+        }
+        
+        const kanban = { ...state.kanban };
+        
+        // Update tickets in kanban board
+        ticketIds.forEach(id => {
+          if (kanban.tickets[id]) {
+            // Initialize groupColors array if needed
+            if (!kanban.tickets[id].groupColors) {
+              kanban.tickets[id].groupColors = [];
+            } else {
+              // Clean up any duplicate groups that might exist
+              kanban.tickets[id].groupColors = kanban.tickets[id].groupColors.filter(g => 
+                g && typeof g === 'object' && g.id && g.color
+              );
+            }
+            
+            // Add the new group color if it doesn't exist already
+            const existingGroupIndex = kanban.tickets[id].groupColors.findIndex(g => g.id === groupId);
+            if (existingGroupIndex >= 0) {
+              // Update existing group color
+              kanban.tickets[id].groupColors[existingGroupIndex].color = color;
+            } else {
+              // Add new group color
+              kanban.tickets[id].groupColors.push({ id: groupId, color });
+            }
+            
+            // For backward compatibility, keep the primary groupColor property as well
+            // Use the most recently added group color as the primary
+            kanban.tickets[id].groupColor = color;
+          }
+        });
+        
+        // Also update in main tickets array
+        let ticketsArr = Array.isArray(state.tickets)
+          ? state.tickets.map(t => {
+              if (ticketIds.includes(t.id)) {
+                // Initialize groupColors array if needed
+                let groupColors = Array.isArray(t.groupColors) ? [...t.groupColors] : [];
+                
+                // Clean up any invalid entries
+                groupColors = groupColors.filter(g => 
+                  g && typeof g === 'object' && g.id && g.color
+                );
+                
+                // Add or update this group color
+                const existingGroupIndex = groupColors.findIndex(g => g.id === groupId);
+                if (existingGroupIndex >= 0) {
+                  groupColors[existingGroupIndex].color = color;
+                } else {
+                  groupColors.push({ id: groupId, color });
+                }
+                
+                return { 
+                  ...t, 
+                  groupColor: color, // Keep for backward compatibility
+                  groupColors 
+                };
+              }
+              return t;
+            })
+          : [];
+          
+        return { kanban, tickets: ticketsArr };
+      }),
 
       // Add an activity/comment to a ticket
       addTicketActivity: (ticketId, activity) => set((state) => {
@@ -177,6 +256,44 @@ export const useAppStore = create(
         kanban.tickets[ticketId] = { ...ticket };
         // Also update in main tickets array
         let ticketsArr = Array.isArray(state.tickets) ? state.tickets.map(t => t.id === ticketId ? { ...ticket } : t) : [];
+        return { kanban, tickets: ticketsArr };
+      }),
+      
+      /**
+       * Clears all group colors from specified tickets
+       * @param {string[]} ticketIds - Array of ticket IDs to clear colors from
+       */
+      clearGroupColorsForTickets: (ticketIds) => set((state) => {
+        if (!ticketIds || !ticketIds.length) return {};
+        
+        const kanban = { ...state.kanban };
+        
+        // Update tickets in kanban board
+        ticketIds.forEach(id => {
+          if (kanban.tickets[id]) {
+            // Remove all group colors
+            kanban.tickets[id] = {
+              ...kanban.tickets[id],
+              groupColors: [],
+              groupColor: undefined // Remove for backward compatibility
+            };
+          }
+        });
+        
+        // Also update in main tickets array
+        let ticketsArr = Array.isArray(state.tickets)
+          ? state.tickets.map(t => {
+              if (ticketIds.includes(t.id)) {
+                return { 
+                  ...t, 
+                  groupColors: [],
+                  groupColor: undefined // Remove for backward compatibility
+                };
+              }
+              return t;
+            })
+          : [];
+          
         return { kanban, tickets: ticketsArr };
       }),
 
@@ -281,7 +398,7 @@ export const useAppStore = create(
       }),
     }),
     {
-      name: 'repair-tracker-store',
+      name: 'repair-tracker-store-' + Date.now(), // Force a new storage key to bypass persisted data
       partialize: (state) => ({
         tickets: state.tickets,
         customers: state.customers,

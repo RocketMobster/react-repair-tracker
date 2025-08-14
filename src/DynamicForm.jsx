@@ -4,7 +4,7 @@ import { formatPhoneNumber } from "./phoneFormat";
 // schema: array of field definitions
 // initialValues: object with initial values for each field
 // onSubmit: function(values)
-export default function DynamicForm({ schema, initialValues = {}, onSubmit, customFieldsSchema = [], initialCustomFields = {} }) {
+export default function DynamicForm({ schema, initialValues = {}, onSubmit, customFieldsSchema = [], initialCustomFields = {}, hideSubmitButton = false }) {
   const [values, setValues] = useState(() => {
     const v = {};
     schema.forEach(f => {
@@ -207,7 +207,9 @@ export default function DynamicForm({ schema, initialValues = {}, onSubmit, cust
           )}
         </div>
       ))}
-      <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">Submit</button>
+      {!hideSubmitButton && (
+        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">Submit</button>
+      )}
     </form>
   );
 }

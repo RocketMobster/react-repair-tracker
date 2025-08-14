@@ -1,10 +1,39 @@
 # Changelog
-## [0.4.0] - 2025-08-08
+
+## [0.7.0] - 2025-08-14
 ### Added
+- Group Color System:
+  - Added "Group Color" button to set colors for all related tickets at once
+  - Added "Clear Groups" button to remove all group colors from related tickets
+  - Added explanatory text and tooltips to color management UI
+  - Implemented consistent group ID generation for better relationship tracking
+  - Enhanced group color pills display in Kanban tickets and ticket details
+
+### Improved
+- Relationship Management:
+  - Improved handling of ticket relationships (parent/child/related)
+  - Enhanced UI for adding, viewing, and managing related tickets
+  - Fixed issues with relationship data integrity and consistency
+  - Added proper cleanup of removed relationships and their group colors
+  - Improved backward compatibility with older data formats
 
 ### Fixed
+- Group Color Logic:
+  - Fixed duplicate group color pills in Kanban board tickets
+  - Fixed issue with group colors being added when canceling ticket edits
+  - Implemented proper deduplication of group colors in the UI
+  - Resolved issues with group color persistence and state management
+  - Improved color assignment logic for consistent group visualization
 
-### Notes
+### Technical
+- Refactored ticket details component for better maintainability
+- Enhanced state management for group colors and relationships
+- Improved data structure for group color storage
+- Fixed naming conflicts in state management functions
+- Added proper validation for group color assignments
+
+## [0.6.0] - 2025-08-12
+### Added
 
 
 # Changelog

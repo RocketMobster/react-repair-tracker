@@ -95,10 +95,49 @@ export default function KanbanTicket({ ticket, colId, position }) {
             {ticket.highPriority && 'HIGH'}
           </button>
         </div>
-  <div className="font-bold text-base text-gray-800 truncate">RMA: {ticket.rmaNumber || ticket.rma || '—'}</div>
-  <div className="text-xs text-gray-700 font-semibold truncate">{ticket.item || '—'}</div>
-  <div className="text-xs text-gray-500 truncate">{companyName}</div>
-  {ticket.assignedTo && <div className="text-xs text-gray-400">Assigned: {ticket.assignedTo}</div>}
+        {/* Group pill labels if groupColors are set */}
+        {(ticket.groupColors && ticket.groupColors.length > 0) ? (
+          <div className="flex flex-wrap gap-1 mb-2">
+            {/* Deduplicate group colors by their color value */}
+            {Array.from(new Set(ticket.groupColors
+              .filter(g => g && typeof g === 'object' && g.id && g.color) // Filter out invalid entries
+              .map(g => g.color))) // Get unique colors
+              .map((color, idx) => (
+                <span
+                  key={`color-${idx}-${color.replace('#', '')}`}
+                  className="inline-block px-3 py-0.5 rounded-full text-xs font-semibold"
+                  style={{ 
+                    backgroundColor: color, 
+                    color: '#fff', 
+                    border: `2px solid ${color}` 
+                  }}
+                  title="This ticket is part of a group"
+                >
+                  Group
+                </span>
+              ))
+            }
+          </div>
+        ) : ticket.groupColor ? (
+          // Backward compatibility for old data structure
+          <span
+            className="inline-block px-3 py-0.5 rounded-full text-xs font-semibold mb-2 mr-2"
+            style={{ backgroundColor: ticket.groupColor, color: '#fff', border: `2px solid ${ticket.groupColor}` }}
+            title="This ticket is part of a group"
+          >
+            Group
+          </span>
+        ) : null}
+        <div className="font-bold text-base text-gray-800 truncate">RMA: {ticket.rmaNumber || ticket.rma || '—'}</div>
+        <div className="text-xs text-gray-700 font-semibold truncate">{ticket.item || '—'}</div>
+        <div className="text-xs text-gray-500 truncate">{companyName}</div>
+        {ticket.reason && (
+          <div className="text-xs text-gray-600 truncate"><span className="font-semibold">Reason for Repair:</span> {ticket.reason}</div>
+        )}
+        {ticket.customFields && ticket.customFields.serialNumber && (
+          <div className="text-xs text-gray-600 truncate"><span className="font-semibold">Serial Number:</span> {ticket.customFields.serialNumber}</div>
+        )}
+        {ticket.assignedTo && <div className="text-xs text-gray-400">Assigned: {ticket.assignedTo}</div>}
       </div>
       <CardPreviewModal key={ticket.id} ticket={ticket} open={previewOpen} onClose={() => setPreviewOpen(false)} />
     </>
