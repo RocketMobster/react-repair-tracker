@@ -2,6 +2,7 @@
 // This will provide demo data for tickets and customers
 
 import { nanoid } from 'nanoid';
+import { cleanupRelationships } from './utils/relationshipUtils';
 
 // Generate random dates within the last 30 days
 function randomDate(daysAgo = 30) {
@@ -286,7 +287,14 @@ export function initializeSampleData(store) {
     
     // We need to create the sample data dynamically each time to get unique IDs
     const newCustomers = [...sampleCustomers];
-    const newTickets = [...sampleTickets];
+    
+    // Clean up relationships in each ticket's relatedTickets array
+    const newTickets = sampleTickets.map(ticket => ({
+      ...ticket,
+      relatedTickets: Array.isArray(ticket.relatedTickets) 
+        ? cleanupRelationships(ticket.relatedTickets)
+        : []
+    }));
     
     // Log the IDs of sample tickets for debugging
     console.log('Sample ticket IDs:', newTickets.map(t => t.id));

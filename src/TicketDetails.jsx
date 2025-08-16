@@ -6,6 +6,8 @@ import { useAppStore } from './store';
 import { ticketFieldGroups, ticketFormSchema, getTicketFormSchema } from './formSchemas';
 import ActivityFeed from './components/ActivityFeed';
 import DynamicForm from './DynamicForm';
+import { toast } from 'react-toastify';
+import { filterDuplicateRelationships, cleanupRelationships } from './utils/relationshipUtils';
 
 // Helper to render attachments safely
 function renderAttachments(attachments) {
@@ -117,18 +119,25 @@ function TicketDetails({ editModeFromRoute: editModeFromProps }) {
   const [msg, setMsg] = useState('');
   const [showRelatedSearch, setShowRelatedSearch] = useState(false);
   const [relatedSearch, setRelatedSearch] = useState("");
-  const [relatedTickets, setRelatedTickets] = useState(ticket?.relatedTickets || []);
-  
-  // Sync relatedTickets state when ticket changes
-  useEffect(() => {
-    setRelatedTickets(ticket?.relatedTickets || []);
-  }, [ticket]);
-  
-  const [externalLinks, setExternalLinks] = useState(ticket?.externalLinks || []);
-  const [relatedSearchResults, setRelatedSearchResults] = useState([]);
   
   // Force edit mode if we're creating a new ticket or if editModeFromRoute is true
   const [editMode, setEditMode] = useState(!!editModeFromRoute || isCreatingNewTicket);
+  
+  const [relatedTickets, setRelatedTickets] = useState(
+    cleanupRelationships(ticket?.relatedTickets || [])
+  );
+  
+  // Sync relatedTickets state when ticket changes, but only if not in edit mode
+  useEffect(() => {
+    if (!editMode) {
+      const cleanedRelationships = cleanupRelationships(ticket?.relatedTickets || []);
+      console.log('Loading ticket relationships with deduplication:', cleanedRelationships);
+      setRelatedTickets(cleanedRelationships);
+    }
+  }, [ticket, editMode]);
+  
+  const [externalLinks, setExternalLinks] = useState(ticket?.externalLinks || []);
+  const [relatedSearchResults, setRelatedSearchResults] = useState([]);
   
   // Initialize form data, include customerId if creating a new ticket
   const initialFormData = ticket 
@@ -229,8 +238,10 @@ function TicketDetails({ editModeFromRoute: editModeFromProps }) {
     const groupId = generateGroupId(groupIds);
     setPendingGroupId(groupId);
     
-    // Reset to default color
-    setPendingGroupColor('#6B7280');
+    // Use existing color as starting point if available
+    // If the ticket already has a group color, use that
+    const currentColor = ticket?.groupColor || '#6B7280';
+    setPendingGroupColor(currentColor);
     
     // Show color picker modal
     setShowColorPicker(true);
@@ -333,7 +344,7 @@ function TicketDetails({ editModeFromRoute: editModeFromProps }) {
         ...ticket,
         ...formValues,
         customFields: mergedCustomFields,
-        relatedTickets,
+        relatedTickets: cleanupRelationships(relatedTickets),
         externalLinks,
       };
       setTickets(tickets.map(t => t.id === ticket.id ? updatedTicket : t));
@@ -389,10 +400,15 @@ function TicketDetails({ editModeFromRoute: editModeFromProps }) {
           It will be visible in the Kanban board and ticket details.
         </p>
         <SketchPicker
-          color={pendingGroupColor}
+          color={pendingGroupColor === 'transparent' ? '#FFFFFF' : pendingGroupColor}
           onChangeComplete={color => setPendingGroupColor(color.hex)}
           presetColors={["#EF4444", "#F59E42", "#FACC15", "#22C55E", "#3B82F6", "#6366F1", "#6B7280", "#D946EF"]}
         />
+        {pendingGroupColor === 'transparent' && (
+          <div className="mt-2 p-2 bg-red-100 text-red-700 rounded border border-red-300 text-center">
+            Clear color selected. Click "Set Color" to confirm removal.
+          </div>
+        )}
         <div className="flex gap-4 mt-4">
           <button
             className="px-4 py-2 bg-blue-600 text-white rounded"
@@ -405,31 +421,54 @@ function TicketDetails({ editModeFromRoute: editModeFromProps }) {
               
               // Only proceed if we have tickets to color
               if (groupIds.length > 0) {
-                // Create a unique group ID for this relationship if needed
-                // For now, use a random ID; in a real app you might want a more meaningful identifier
-                const groupId = `color-group-${Date.now().toString(36)}`;
-                setGroupColorForTickets(groupIds, pendingGroupColor, groupId);
+                // Check if the user has selected to clear colors (transparent)
+                if (pendingGroupColor === 'transparent') {
+                  // Apply the clear color logic
+                  clearGroupColorsForTickets(groupIds);
+                } else {
+                  // Create a unique group ID for this relationship if needed
+                  // For now, use a random ID; in a real app you might want a more meaningful identifier
+                  const groupId = `color-group-${Date.now().toString(36)}`;
+                  setGroupColorForTickets(groupIds, pendingGroupColor, groupId);
+                }
               } else {
                 // Store the color in form state for new tickets with no relationships
                 setForm(prev => {
-                  const groupColors = Array.isArray(prev.groupColors) 
-                    ? [...prev.groupColors] 
-                    : [];
-                  
-                  // Add a new group color
-                  const groupId = `color-group-${Date.now().toString(36)}`;
-                  groupColors.push({ id: groupId, color: pendingGroupColor });
-                  
-                  return { 
-                    ...prev, 
-                    groupColor: pendingGroupColor,
-                    groupColors
-                  };
+                  // Check if the user has selected to clear colors (transparent)
+                  if (pendingGroupColor === 'transparent') {
+                    return {
+                      ...prev,
+                      groupColor: undefined,
+                      groupColors: []
+                    };
+                  } else {
+                    const groupColors = Array.isArray(prev.groupColors) 
+                      ? [...prev.groupColors] 
+                      : [];
+                    
+                    // Add a new group color
+                    const groupId = `color-group-${Date.now().toString(36)}`;
+                    groupColors.push({ id: groupId, color: pendingGroupColor });
+                    
+                    return { 
+                      ...prev, 
+                      groupColor: pendingGroupColor,
+                      groupColors
+                    };
+                  }
                 });
               }
               setShowColorPicker(false);
             }}
-          >Set Color</button>
+          >{pendingGroupColor === 'transparent' ? 'Confirm Clear' : 'Apply Color'}</button>
+          <button
+            className="px-4 py-2 bg-red-500 text-white rounded"
+            onClick={() => {
+              // Instead of applying the change immediately, just set the pending color to null/transparent
+              // This will be applied only when the user clicks "Set Color"
+              setPendingGroupColor('transparent');
+            }}
+          >Clear Color</button>
           <button
             className="px-4 py-2 bg-gray-300 text-gray-700 rounded"
             onClick={() => setShowColorPicker(false)}
@@ -500,7 +539,7 @@ function TicketDetails({ editModeFromRoute: editModeFromProps }) {
             {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded mb-4">{error}</div>}
             
             <DynamicForm
-              schema={getTicketFormSchema(customer || { customFields: [] })}
+              schema={getTicketFormSchema(customer ? { customFields: customer.customFields || [] } : {})}
               initialValues={form}
               onSubmit={handleDynamicFormSubmit}
               className="space-y-4"
@@ -615,7 +654,7 @@ function TicketDetails({ editModeFromRoute: editModeFromProps }) {
                         <span className="text-gray-700">{`RMA #${rel.rma}`}</span>
                         <span className="text-xs px-2 py-1 bg-gray-200 rounded">Incoming</span>
                         <span className="text-xs text-gray-500">({rel.type})</span>
-                        {rel.note && <span className="text-gray-600 italic ml-2">({rel.note})</span>}
+                        {rel.note && <span className="text-gray-600 ml-2"><strong>NOTES:</strong> {rel.note}</span>}
                         <span className="text-xs text-gray-400 ml-2">To edit or remove, go to the ticket where this relationship was created.</span>
                       </div>
                     ))}
@@ -788,7 +827,7 @@ function TicketDetails({ editModeFromRoute: editModeFromProps }) {
                           RMA #{relTicket.rmaNumber || relTicket.rma || relTicket.id}
                         </span>
                         <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">{rel.type}</span>
-                        {rel.note && <span className="text-gray-600 italic">({rel.note})</span>}
+                        {rel.note && <span className="text-gray-600 ml-2"><strong>NOTES:</strong> {rel.note}</span>}
                       </div>
                     );
                   })}
@@ -810,6 +849,13 @@ function TicketDetails({ editModeFromRoute: editModeFromProps }) {
                         const relType = rel?.type || 'related';
                         const relNote = rel?.note || '';
                         if (String(relId) === String(ticket.id)) {
+                          // Skip this incoming relationship if we already have an outgoing relationship to this ticket
+                          // This is what prevents the duplicate display of relationships
+                          if (relatedTickets.some(outRel => String(outRel.id) === String(t.id))) {
+                            console.log(`Skipping incoming relationship from ${t.id} as we already have an outgoing relationship to it`);
+                            continue;
+                          }
+                          
                           // Infer the inverse relationship type
                           let inferredType = relType;
                           if (relType === 'parent') inferredType = 'child';
@@ -834,7 +880,7 @@ function TicketDetails({ editModeFromRoute: editModeFromProps }) {
                             </span>
                             <span className="text-xs px-2 py-1 bg-gray-200 rounded">Incoming</span>
                             <span className="text-xs text-gray-500">({rel.type})</span>
-                            {rel.note && <span className="text-gray-600 italic ml-2">({rel.note})</span>}
+                            {rel.note && <span className="text-gray-600 ml-2"><strong>NOTES:</strong> {rel.note}</span>}
                           </div>
                         ))}
                       </div>

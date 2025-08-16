@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { nanoid } from 'nanoid';
+import { cleanupRelationships } from './utils/relationshipUtils';
 
 // Example roles: Admin, Technician, Viewer, FrontDesk, Guest
 export const useAppStore = create(
@@ -14,8 +15,26 @@ export const useAppStore = create(
       plugins: [],
       rolePermissions: {},
       // Add more state as needed
-           // Placeholder for future barcode plugin
-           barcode: null,
+      // Placeholder for future barcode plugin
+      barcode: null,
+      
+      // Clean up existing relationships in all tickets
+      deduplicateAllRelationships: () => set((state) => {
+        const kanban = { ...state.kanban };
+        
+        // Process each ticket's relationships
+        if (kanban.tickets) {
+          Object.keys(kanban.tickets).forEach(ticketId => {
+            if (kanban.tickets[ticketId] && Array.isArray(kanban.tickets[ticketId].relatedTickets)) {
+              // Apply deduplication
+              kanban.tickets[ticketId].relatedTickets = cleanupRelationships(kanban.tickets[ticketId].relatedTickets);
+            }
+          });
+        }
+        
+        return { kanban };
+      }),
+      
       setCurrentUser: (user) => set({ currentUser: user }),
       setTickets: (tickets) => set({ tickets }),
       setCustomers: (customers) => set({ customers }),
@@ -142,7 +161,7 @@ export const useAppStore = create(
           ...ticket,
           activity: Array.isArray(ticket.activity) ? ticket.activity : [],
           customFields: typeof ticket.customFields === 'object' && ticket.customFields !== null ? ticket.customFields : {},
-          relatedTickets: Array.isArray(ticket.relatedTickets) ? ticket.relatedTickets : [],
+          relatedTickets: cleanupRelationships(Array.isArray(ticket.relatedTickets) ? ticket.relatedTickets : []),
           externalLinks: Array.isArray(ticket.externalLinks) ? ticket.externalLinks : [],
             groupColor: ticket.groupColor || null, // New property for group color
         };

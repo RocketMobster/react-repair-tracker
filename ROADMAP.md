@@ -48,6 +48,12 @@ RepairTracker Pro is a React + Vite + Tailwind CSS Progressive Web App (PWA) for
     - [x] Group color system for related tickets (v0.7.0)
       - [x] Deduplicate group color pills display
       - [x] Group Color button for bulk color assignment
+    - [x] Improved relationship display with consistent formatting (v0.8.0)
+    - [x] Enhanced color picker with proper confirmation flow (v0.8.0)
+    - [ ] Visual cues for blocked/required tickets (v0.9.0)
+      - [ ] Visual indicators for tickets blocked by other tickets
+      - [ ] Block movement of tickets that depend on incomplete tickets
+      - [ ] Notification system for status changes in related tickets
       - [x] Clear Groups button for removing group colors
       - [x] Fix color assignment on edit cancel
       - [x] Consistent group ID generation

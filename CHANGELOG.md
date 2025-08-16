@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.8.0] - 2025-08-16
+### Added
+- Relationship Visualization Improvements:
+  - Updated relationship note formatting with "NOTES:" prefix for clarity
+  - Improved deduplication of relationships throughout the application
+  - Applied relationship cleanup to sample data to ensure consistent initialization
+  - Enhanced color picker modal with proper confirmation flow
+  
+### Improved
+- Relationship Color Management:
+  - Fixed color picker behavior to prevent accidental clearing of group colors
+  - Ensured consistent behavior between "Group Color" button and color thumbnail
+  - Improved UX flow when adding or modifying relationship colors
+  - Enhanced relationship colors display on tickets and in ticket details
+
+### Fixed
+- Relationship Display Logic:
+  - Eliminated duplicate relationship entries in ticket details view
+  - Fixed inconsistent formatting of relationship notes
+  - Resolved issues with color picker modal opening from different UI elements
+  - Fixed unintended behavior when canceling color selection
+  
+### Technical
+- Enhanced cleanup of relationship data structure using `relationshipUtils.js`
+- Improved deduplication logic for relationships to prevent duplicate entries
+- Added better validation and error handling for relationship management
+- Refactored color picker modal code for better maintainability
+
 ## [0.7.0] - 2025-08-14
 ### Added
 - Group Color System:
